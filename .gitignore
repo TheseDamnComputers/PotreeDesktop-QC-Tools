@@ -10,3 +10,6 @@ libs/Cesium
 
 # Machine-specific launcher (absolute paths); create your own
 *.lnk
+
+# Personal notes and scratch - never published
+notes/
