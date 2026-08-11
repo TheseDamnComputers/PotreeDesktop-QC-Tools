@@ -62895,8 +62895,18 @@ void main() {
 			let webglBuffer = this.buffers.get(geometry);
 			if (webglBuffer != null) {
 				for (let attributeName in geometry.attributes) {
-					gl.deleteBuffer(webglBuffer.vbos.get(attributeName).handle);
+					// [QC Tools] guard: an attribute added after the buffer was
+					// built has no vbo, and this threw on it.
+					let vbo = webglBuffer.vbos.get(attributeName);
+					if (vbo) {
+						gl.deleteBuffer(vbo.handle);
+					}
 				}
+				// NOTE: the vao is deliberately not deleted here. Doing so threw
+				// "gl.deleteVertexArray is not a function" on this renderer's context
+				// and froze the viewer during ordinary navigation. Potree leaks one
+				// vao per rebuilt buffer, which is a small, pre-existing leak and not
+				// worth breaking rendering over.
 				this.buffers.delete(geometry);
 			}
 		}
@@ -63268,7 +63278,14 @@ void main() {
 					for(let attributeName in geometry.attributes){
 						let attribute = geometry.attributes[attributeName];
 
-						if(attribute.version > webglBuffer.vbos.get(attributeName).version){
+						// [QC Tools] An attribute added after this geometry's buffer
+						// was built has no vbo yet, and reading .version off undefined
+						// threw. updateBuffer() already creates missing vbos, so just
+						// send it there. Without this, adding an attribute meant tearing
+						// the whole buffer set down and rebuilding it, which is what was
+						// breaking rendering.
+						let vbo = webglBuffer.vbos.get(attributeName);
+						if(vbo === undefined || attribute.version > vbo.version){
 							this.updateBuffer(geometry);
 						}
 					}
@@ -63287,7 +63304,12 @@ void main() {
 					for(const attributeName in geometry.attributes){
 						const bufferAttribute = geometry.attributes[attributeName];
 						const vbo = webglBuffer.vbos.get(attributeName);
-						
+
+						// [QC Tools] guard: see deleteBuffer
+						if(vbo === undefined){
+							continue;
+						}
+
 						gl.bindBuffer(gl.ARRAY_BUFFER, vbo.handle);
 						gl.disableVertexAttribArray(attributeLocation);
 					}
@@ -63313,7 +63335,7 @@ void main() {
 							.find(a => a.name === attName);
 
 						let range = material.getRange(attName);
-						if(!range){
+						if(!range && attExtra){
 							range = attExtra.range;
 						}
 
@@ -63321,7 +63343,14 @@ void main() {
 							range = [0, 1];
 						}
 
-						let initialRange = attExtra.initialRange;
+						// [QC Tools] An attribute that lives only on the geometry,
+						// not in the file's point format, has no entry here - and must
+						// not have one. pointAttributes is the format description handed
+						// to the decoder worker, so adding an entry makes the worker
+						// expect bytes the file does not contain, and every node loaded
+						// afterwards fails to decode. [0, 1] means "the buffer already
+						// holds real values".
+						let initialRange = attExtra ? attExtra.initialRange : [0, 1];
 						let initialRangeSize = initialRange[1] - initialRange[0];
 
 						let globalRange = range;
@@ -63943,6 +63972,12 @@ void main() {
 					if (doTraverse) {
 						this.traverse(node);
 					}
+				} else if (node.failedToLoad) {
+					// [QC Tools] A node whose data will not decode can never
+					// become loaded, and re-queuing it spins this request forever: it
+					// never reaches onFinish, so whoever is awaiting it waits for good.
+					// Skip it - the request completes, minus that node's points.
+					continue;
 				} else {
 					node.load();
 					this.priorityQueue.push(element);
@@ -66319,6 +66354,11 @@ void main() {
 				return;
 			}
 
+			// [QC Tools] see worker.onerror below
+			if(node.failedToLoad){
+				return;
+			}
+
 			node.loading = true;
 			Potree.numNodesLoading++;
 
@@ -66366,6 +66406,39 @@ void main() {
 				}
 
 				let worker = Potree.workerPool.getWorker(workerPath);
+
+				// [QC Tools] If the decoder worker throws, onmessage never fires,
+				// so node.loading stays true and the global load slot it took is never
+				// returned. NodeLoader.load() then returns immediately on the stale
+				// flag forever, and once all of Potree.maxNodesLoading slots have
+				// leaked, *every* load in the application stops: the cloud freezes at
+				// whatever level was already resident and renders as oversized points
+				// that never refine. Reading a cloud at full resolution makes this easy
+				// to hit. The errored worker is deliberately not returned to the pool -
+				// getWorker() will make a fresh one.
+				worker.onerror = function (event) {
+					node.loaded = false;
+					node.loading = false;
+					Potree.numNodesLoading--;
+
+					// A node whose data will not decode fails again on every retry, so
+					// stop offering it after a few attempts rather than letting it
+					// occupy a slot forever. (Measured not to be the cause of the
+					// detail collapse below - a control run with unlimited retries
+					// behaved identically.)
+					node.loadAttempts = (node.loadAttempts || 0) + 1;
+					if (node.loadAttempts >= 3) {
+						node.failedToLoad = true;
+					}
+
+					// Full-depth reads reach leaf nodes that normal navigation never
+					// requests, and a few of those fail to decode. Log the first few
+					// and then just count, rather than flooding the console.
+					Potree.decodeFailures = (Potree.decodeFailures || 0) + 1;
+					if(Potree.decodeFailures <= 5){
+						console.warn(`failed to decode ${node.name}: ${event.message}`);
+					}
+				};
 
 				worker.onmessage = function (e) {
 

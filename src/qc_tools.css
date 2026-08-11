@@ -1,0 +1,66 @@
+/* QC Tools additions - sidebar panel styling */
+
+.qc-panel li {
+	list-style: none;
+	margin: 6px 0px;
+}
+
+.qc-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.qc-num {
+	width: 60px;
+}
+
+.qc-axis {
+	display: block;
+	margin-bottom: 2px;
+}
+
+.qc-slider {
+	margin: 4px 6px 6px 6px;
+}
+
+.qc-status {
+	color: #9AA1A4;
+	font-size: 90%;
+	min-height: 1.2em;
+}
+
+.qc-dim {
+	color: #9AA1A4;
+	font-size: 90%;
+}
+
+.qc-faint {
+	color: #6d7477;
+}
+
+.qc-results {
+	max-height: 260px;
+	overflow-y: auto;
+}
+
+.qc-result {
+	border-top: 1px solid #4a4a4a;
+	padding: 6px 2px;
+}
+
+.qc-result:first-child {
+	border-top: none;
+}
+
+.qc-link {
+	color: #8ab4f8;
+	cursor: pointer;
+	font-size: 90%;
+	margin-left: 8px;
+	text-decoration: underline;
+}
+
+.qc-link:hover {
+	color: #ffffff;
+}

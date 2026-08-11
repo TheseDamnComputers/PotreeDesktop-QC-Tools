@@ -13,6 +13,7 @@
 	<link rel="stylesheet" type="text/css" href="./libs/spectrum/spectrum.css">
 	<link rel="stylesheet" type="text/css" href="./libs/jstree/themes/mixed/style.css">
 	<link rel="stylesheet" type="text/css" href="./src/desktop.css">
+	<link rel="stylesheet" type="text/css" href="./src/qc_tools.css">
 
 	<style>
 
@@ -120,6 +121,7 @@
 	<script src="./libs/potree/potree.js"></script>
 	<script src="./libs/plasio/js/laslaz.js"></script>
 	<script src="./libs/copc/index.js"></script>
+	<script src="./src/qc_tools.js"></script>
 
 		<script>
 		let elSplatQuality = $("#converter_choice");
@@ -190,6 +192,10 @@
 			$("#menu_scene").next().show();
 			$("#menu_filters").next().show();
 			viewer.toggleSidebar();
+
+			// QC Tools additions: density probe + box clip sliders
+			QCTools.install(viewer);
+			$("#menu_qc_tools").next().show();
 
 
 			// let section = $(`

@@ -1,19 +1,24 @@
 {
-	"name": "potree_desktop",
-	"version": "1.7.0",
-	"description": "A WebGL Point Cloud Viewer",
+	"name": "potree-desktop-qc-tools",
+	"version": "1.0.0",
+	"description": "PotreeDesktop with point cloud quality-control tools: density probe, box clip, polygon cut and density colouring",
 	"main": "main.js",
 	"scripts": {
 		"start": "electron ."
 	},
-	"repository": "https://github.com/potree/potree",
+	"repository": "https://github.com/TheseDamnComputers/PotreeDesktop-QC-Tools",
 	"keywords": [
 		"Potree",
 		"point cloud viewer",
-		"lidar viewer"
+		"lidar viewer",
+		"point density",
+		"quality control"
 	],
-	"author": "Markus Schuetz",
-	"license": "no license available at this time",
+	"author": "TheseDamnComputers",
+	"contributors": [
+		"Markus Schuetz (Potree, PotreeDesktop)"
+	],
+	"license": "BSD-2-Clause",
 	"dependencies": {
 		"electron": "21.3.1"
 	}
