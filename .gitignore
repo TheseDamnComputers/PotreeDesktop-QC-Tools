@@ -1,6 +1,8 @@
 node_modules
-package-lock.json
 libs/Cesium
+
+# package-lock.json is deliberately committed: it pins the exact dependency tree
+# so npm install resolves the same way on every machine. Upstream ignores it.
 
 # Point cloud data and conversion output - never commit these
 *.las
