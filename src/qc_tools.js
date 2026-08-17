@@ -39,6 +39,9 @@
 		const polygon = initPolygonCut(ctx, panel, clipMode);
 		const densityColor = initDensityColoring(ctx, panel);
 		initCutSettings(panel, clipMode);
+		// Lives in its own file: it reports on the files rather than driving the
+		// viewer, so it shares nothing with the tools above.
+		const fileInfo = window.QCFileInfo ? window.QCFileInfo.install(ctx, panel) : null;
 		initLoaderHealth(panel, viewer);
 
 		addToolbarButton("#tools", "area.svg",
@@ -47,6 +50,11 @@
 		addToolbarButton("#clipping_tools", "clip-polygon.svg",
 			"Polygon cut - draw a shape and keep what is inside it, straight down",
 			polygon.start);
+		if (fileInfo) {
+			addToolbarButton("#tools", "file_las_3d.svg",
+				"Point cloud info - everything the file records, as text you can copy",
+				fileInfo.show);
+		}
 
 		hardenNodeLoader(viewer);
 		applyDefaults(viewer);
@@ -55,6 +63,7 @@
 		window.QCTools.polygon = polygon;
 		window.QCTools.densityColor = densityColor;
 		window.QCTools.clipMode = clipMode;
+		window.QCTools.fileInfo = fileInfo;
 	}
 
 	/**

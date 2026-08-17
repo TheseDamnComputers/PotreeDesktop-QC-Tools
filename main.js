@@ -61,6 +61,16 @@ function createWindow () {
 	let menu = Menu.buildFromTemplate(template);
 	mainWindow.setMenu(menu);
 
+	// [QC Tools] Windows opened with window.open - the point cloud info report -
+	// otherwise get Electron's stock File/Edit/View/Window/Help menu. Their
+	// document is written in with document.write and has no URL of its own, so
+	// View > Reload reloads about:blank: the report vanishes and the window is
+	// left dead. None of that menu applies to a report, so give it none.
+	mainWindow.webContents.on('did-create-window', (childWindow) => {
+		childWindow.setMenu(null);
+		childWindow.setMenuBarVisibility(false);
+	});
+
 
 	{
 		const { ipcMain } = require('electron');

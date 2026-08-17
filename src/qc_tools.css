@@ -64,3 +64,53 @@
 .qc-link:hover {
 	color: #ffffff;
 }
+
+/* Fallback for the file info report when a separate window cannot be opened.
+   Selection has to be forced back on: potree.css turns it off further up. */
+
+.qc-info-overlay {
+	position: absolute;
+	left: 5%;
+	top: 4%;
+	width: 70%;
+	height: 88%;
+	z-index: 10000;
+	display: flex;
+	flex-direction: column;
+	background: #1c1d1f;
+	border: 1px solid #565656;
+	box-shadow: 0px 4px 24px rgba(0, 0, 0, 0.6);
+}
+
+.qc-info-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 6px 10px;
+	background: #2a2c2e;
+	border-bottom: 1px solid #565656;
+	color: #d9dcde;
+}
+
+.qc-info-close {
+	cursor: pointer;
+	padding: 0px 4px;
+}
+
+.qc-info-close:hover {
+	color: #ffffff;
+}
+
+.qc-info-text {
+	flex-grow: 1;
+	margin: 0;
+	padding: 14px 18px;
+	overflow: auto;
+	color: #d9dcde;
+	font: 12px/1.45 Consolas, "DejaVu Sans Mono", "Courier New", monospace;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	user-select: text;
+	-webkit-user-select: text;
+	cursor: text;
+}

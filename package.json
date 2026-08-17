@@ -1,7 +1,7 @@
 {
 	"name": "potree-desktop-qc-tools",
-	"version": "1.0.0",
-	"description": "PotreeDesktop with point cloud quality-control tools: density probe, box clip, polygon cut and density colouring",
+	"version": "1.1.0",
+	"description": "PotreeDesktop with point cloud quality-control tools: density probe, box clip, polygon cut, density colouring and a LAS/COPC file info report",
 	"main": "main.js",
 	"scripts": {
 		"start": "electron ."
@@ -12,7 +12,11 @@
 		"point cloud viewer",
 		"lidar viewer",
 		"point density",
-		"quality control"
+		"quality control",
+		"LAS",
+		"LAZ",
+		"COPC",
+		"KML"
 	],
 	"author": "TheseDamnComputers",
 	"contributors": [

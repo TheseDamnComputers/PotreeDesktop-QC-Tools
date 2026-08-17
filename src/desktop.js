@@ -2,12 +2,41 @@
 import * as THREE from "../libs/three.js/build/three.module.js"
 import JSON5 from "../libs/json5-2.1.3/json5.mjs";
 
+/**
+ * [QC Tools] Records what a converted octree came from, next to the octree.
+ *
+ * PotreeConverter does not keep the source path, and it drops the coordinate
+ * system on the way through, so an octree on its own cannot say which LAS/LAZ
+ * it holds or what CRS that file declared. The File info report reads this back.
+ */
+function writeSourceManifest(targetDirectory, inputPaths, converter){
+	try{
+		const fs = require("fs");
+		const manifest = {
+			source: inputPaths,
+			converter: converter,
+			converted: new Date().toISOString(),
+		};
+		fs.writeFileSync(`${targetDirectory}/qc_source.json`,
+			JSON.stringify(manifest, null, "\t"));
+	}catch(e){
+		// Not worth failing a conversion over - the report just says nothing.
+		console.warn("could not write qc_source.json", e);
+	}
+}
+
 export function loadDroppedPointcloud(cloudjsPath){
 	const folderName = cloudjsPath.replace(/\\/g, "/").split("/").reverse()[1];
 
 	Potree.loadPointCloud(cloudjsPath).then(e => {
 		let pointcloud = e.pointcloud;
 		let material = pointcloud.material;
+
+		// [QC Tools] CopcLoader keeps only its range getter, so the path it came
+		// from is lost. File info needs it to report the file itself.
+		if(pointcloud.pcoGeometry && !pointcloud.pcoGeometry.url){
+			pointcloud.pcoGeometry.url = cloudjsPath;
+		}
 
 		pointcloud.name = folderName;
 
@@ -149,6 +178,8 @@ export function convert_17(inputPaths, chosenPath, pointcloudName){
 	converter.on('close', (code) => {
 		console.log(`child process exited with code ${code}`);
 
+		writeSourceManifest(chosenPath, inputPaths, "PotreeConverter 1.7");
+
 		const cloudJS = `${chosenPath}/cloud.js`;
 		console.log("now loading point cloud: " + cloudJS);
 
@@ -245,6 +276,8 @@ export function convert_20(inputPaths, chosenPath, pointcloudName){
 
 	converter.on('exit', (code) => {
 		console.log(`child process exited with code ${code}`);
+
+		writeSourceManifest(chosenPath, inputPaths, "PotreeConverter 2.0");
 
 		const cloudJS = `${chosenPath}/metadata.json`;
 		console.log("now loading point cloud: " + cloudJS);

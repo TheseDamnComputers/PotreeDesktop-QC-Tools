@@ -1,9 +1,9 @@
 # PotreeDesktop + QC Tools
 
-A fork of [PotreeDesktop](https://github.com/potree/PotreeDesktop) with four
+A fork of [PotreeDesktop](https://github.com/potree/PotreeDesktop) with five
 tools for checking point cloud quality: measure local point density, isolate a
-region with sliders or a drawn polygon, and colour a whole cloud against a
-density specification.
+region with sliders or a drawn polygon, colour a whole cloud against a density
+specification, and read back everything the files record.
 
 Everything else is stock PotreeDesktop — the desktop build of
 [Potree](https://github.com/potree/potree) by Markus Schütz.
@@ -18,31 +18,86 @@ Everything else is stock PotreeDesktop — the desktop build of
 | **Box clip** | Six walls on three two-handle sliders — X, Y and Z min/max — to isolate a region. GPU-side, so instant on large clouds. |
 | **Polygon cut** | Draw a shape and keep only what is inside it, extruded straight down. Your view is never moved. |
 | **Density colouring** | Colour the whole cloud by points/m² against a spec, red below the limit through orange to green, with a live threshold slider. |
+| **File info** | One click for everything the files record — LAS/COPC public header, every VLR decoded, coordinate system, compression, attribute ranges, classes present, average points/m² — as collapsible cards of selectable text, with a button to show the cloud's real coverage in Google Earth. |
 
 The probe and the density colouring both count only points that are **currently
 visible** — GPS time, return, source id and classification filters and any active
 cut are all applied. Filter to one collection pass and you measure that pass.
 
-Full documentation: [`src/QC_TOOLS.md`](src/QC_TOOLS.md).
+File info is the opposite: it reads the files, so nothing on screen changes what
+it says. Its **Show coverage in Google Earth** button writes the cloud's actual
+plan-view shape as KML — separate blocks as separate areas, and a lake or a gap
+in the returns as a hole — not a bounding box.
+
+![The File info report](docs/file-info.png)
 
 ## Getting started
 
-* Install [Node.js](https://nodejs.org/en/)
-* `npm install`
-* `npm start`, or run `PotreeDesktop.bat`
-* Drag and drop a LAS/LAZ file to convert and load it, or a previously converted
-  point cloud to load it directly
+Requirements: [Node.js](https://nodejs.org/en/) and Windows. PotreeConverter and
+everything else needed ships in `libs/`.
+
+```bash
+npm install
+npm start
+```
+
+Or run `PotreeDesktop.bat`. Then drag and drop a LAS/LAZ file to convert and load
+it, or a previously converted `metadata.json`, `cloud.js` or `.copc.laz` to load it
+directly.
 
 The tools appear in a **QC Tools** section in the sidebar.
+
+## Documentation
+
+| | |
+| --- | --- |
+| [`src/QC_TOOLS.md`](src/QC_TOOLS.md) | Full documentation: how each tool works, the constraints behind the design, and the measurements backing the numbers |
+| [`CHANGELOG.md`](CHANGELOG.md) | What changed in each release |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Where the traps are, and how to verify a change without a test suite |
+
+Two sections of `QC_TOOLS.md` are worth reading before changing anything:
+[Constraints worth keeping](src/QC_TOOLS.md#constraints-worth-keeping), five
+changes that look like improvements and each break something subtly; and
+[Potree patches](src/QC_TOOLS.md#potree-patches), which must be re-applied after
+a Potree upgrade.
+
+## Accuracy, and what these numbers are not
+
+The density probe and density colouring **count points** — they read the cloud at
+full resolution and the figures are exact for the region they cover.
+
+File info's average points/m² is an **estimate**, measured from a coverage raster
+built from a fraction of the points. On synthetic clouds of known footprint it
+lands within a few percent, and against a full-resolution raster of a real 30M
+point cloud it was 0.6% out. It is a whole-cloud average, so it is a sanity check,
+not a figure to hold a delivery against. Use the probe or the colouring for that.
+
+The [verification section](src/QC_TOOLS.md#verification) has the measurements.
+
+## A note on Electron and security
+
+This is a local desktop viewer. It runs with `nodeIntegration` enabled and
+`contextIsolation` disabled — inherited from upstream PotreeDesktop, and needed
+because the tools read point cloud files straight off the disk. That means any
+page loaded in the window has full access to the machine, so **only ever point it
+at your own local files.**
+
+The pinned Electron version is old. Upgrading it is not difficult but it does risk
+the four `potree.js` patches and the rendering behaviour they fix, so it wants
+doing deliberately with the verification steps in
+[`CONTRIBUTING.md`](CONTRIBUTING.md) rather than as a drive-by bump.
 
 ## How it is put together
 
 | File | What it is |
 | --- | --- |
-| `src/qc_tools.js` | All of the tool code |
+| `src/qc_tools.js` | The four viewer tools |
+| `src/qc_fileinfo.js` | The file info report |
 | `src/qc_tools.css` | Panel styling |
 | `src/QC_TOOLS.md` | Documentation, including the constraints and measurements behind the design |
-| `index.html` | Three added lines: the stylesheet, the script, and `QCTools.install(viewer)` |
+| `index.html` | Four added lines: the stylesheet, the two scripts, and `QCTools.install(viewer)` |
+| `src/desktop.js` | Two additions marked `[QC Tools]`, so a converted octree can still name the file it came from |
+| `main.js` | One addition marked `[QC Tools]`, so the report window does not get Electron's stock menu |
 | `libs/potree/potree.js` | Four small patches, each marked `[QC Tools]` |
 
 ### Changes to Potree itself
