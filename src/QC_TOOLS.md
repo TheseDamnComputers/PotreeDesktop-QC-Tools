@@ -14,9 +14,9 @@ Everything lives in a **QC Tools** section in the sidebar.
 | `src/qc_fileinfo.js` | The file info report |
 | `src/qc_tools.css` | Panel styling |
 | `index.html` | Four lines: the stylesheet, the two scripts, and `QCTools.install(viewer)` inside `viewer.loadGUI()` |
-| `src/desktop.js` | Two additions marked `[QC Tools]` — see [File info](#5-file-info) |
+| `src/desktop.js` | Two additions marked `[QC Tools]`, see [File info](#5-file-info) |
 | `main.js` | One addition marked `[QC Tools]`: strips the stock menu off the report window |
-| `libs/potree/potree.js` | Four small patches, each marked `[QC Tools]` — see [Potree patches](#potree-patches) |
+| `libs/potree/potree.js` | Four small patches, each marked `[QC Tools]`, see [Potree patches](#potree-patches) |
 
 Launch with the `Potree QC Viewer` shortcut in the project folder, or:
 
@@ -26,13 +26,13 @@ npm start
 
 ## 1. Point density probe
 
-Drop an N x N m square on the cloud — the footprint as seen from above — and
+Drop an N x N m square on the cloud (the footprint as seen from above) and
 count every point in the vertical column through it.
 
 - The toolbar button (area icon, end of the Tools row) or **Place square** arms
   the pick. Click a spot on the cloud; right-click or Esc cancels.
 - **Square size** defaults to 1.0 m, so the count *is* the points/m² figure. Any
-  size works — the panel always divides by the real area.
+  size works, because the panel always divides by the real area.
 - The result shows total points, points/m², and the z range the points span. The
   density is also drawn as a label on the orange marker box, which shrinks to the
   measured z extent once counting finishes.
@@ -42,7 +42,7 @@ Counting walks the octree to full depth, so the number is the true stored point
 count, not the count at the current level of detail. **Cancel** stops it and
 reports the partial count.
 
-The column is unbounded vertically — on a cloud with ground and canopy,
+The column is unbounded vertically. On a cloud with ground and canopy,
 everything above the square is included unless a cut or filter excludes it.
 
 ### It counts only what you can see
@@ -61,7 +61,7 @@ with camera distance, and a density that moved when you zoomed would be useless.
 
 ## 2. Box clip
 
-Six walls — X, Y and Z min/max — as three two-handle sliders. Everything outside
+Six walls (X, Y and Z min/max) as three two-handle sliders. Everything outside
 is hidden on the GPU, so it is instant on large clouds and nothing is deleted.
 
 - **Isolate a box** creates the clip volume.
@@ -72,7 +72,7 @@ is hidden on the GPU, so it is instant on large clouds and nothing is deleted.
 
 Slider range comes from the cloud's bounding box. PotreeConverter 2.0 stores a
 *cubic* bounding box, so on a wide flat cloud the Z slider starts out covering a
-lot of empty air — one press of **Zoom sliders to box** fixes that.
+lot of empty air. One press of **Zoom sliders to box** fixes that.
 
 The box outline and the density probes are excluded from mouse picking, so you
 can orbit and pan straight through them. As a consequence they cannot be dragged
@@ -84,7 +84,7 @@ Draw a shape around something and keep only what falls inside it, extruded
 straight down the z axis.
 
 - **Draw polygon**, or the polygon icon in the Clipping toolbar. **Your view is
-  not moved** — stay zoomed in on whatever you are looking at.
+  not moved**, so stay zoomed in on whatever you are looking at.
 - Click each corner. **Double-click or right-click** closes the shape, Esc
   cancels. Three corners minimum, eight maximum (a hard limit in Potree's clip
   shader).
@@ -94,7 +94,7 @@ straight down the z axis.
   corner onto a horizontal plane at the previous corner's height, so you can draw
   *around* an object rather than only across it.
 - Only the x/y of each corner is used, so corners at different heights are fine.
-- Cuts stack — draw a second polygon to narrow further.
+- Cuts stack: draw a second polygon to narrow further.
 
 Potree's own polygon clip freezes the camera and extrudes along *that* view
 direction, which under a perspective camera is a diverging frustum rather than a
@@ -113,7 +113,7 @@ spec like "50 ppsm", with everything below the threshold forced to red.
   ramping through yellow to green at twice it. The hard step at the limit is
   deliberate: a cell one point under spec should read as a failure, not as
   "nearly fine".
-- The slider recolours live — it only changes the gradient and display range, so
+- The slider recolours live: it only changes the gradient and display range, so
   no re-analysis is needed. The grid holds real pts/m² values.
 - **Restore colours** puts the previous attribute and gradient back and keeps the
   analysis, so you can toggle between them.
@@ -122,7 +122,7 @@ Density is counted per square grid cell over the **full-resolution** data, which
 is what survey specs mean by points per square metre. It applies the same
 visibility rules as the probe, so cutting to one collection pass and re-analysing
 gives that pass's density. Cells only partly inside a cut come out low, because
-the points outside really were removed — so the boundary cells of a cut are not
+the points outside really were removed, so the boundary cells of a cut are not
 meaningful figures.
 
 ### Speed
@@ -138,7 +138,7 @@ cloud, 1 m cells, local disk:
 | 10 x 10 m polygon cut | 0.3 s |
 
 Roughly 370k points/second, so a whole-cloud pass over an 80M point delivery is
-minutes. **Clip to the area you care about first** — that is exact, not an
+minutes. **Clip to the area you care about first**: that is exact, not an
 approximation, and it is the difference between 0.3 s and 6 s. The grid is sized
 to the cut too: a 10 x 10 m polygon on a 100 x 100 m cloud drops it from 10,201
 cells to 182.
@@ -168,7 +168,7 @@ QCTools.densityColor.grid;                     // the raw grid
 
 ## 5. File info
 
-One button — **Point cloud info**, or the LAS icon at the end of the Tools row —
+One button, **Point cloud info**, or the LAS icon at the end of the Tools row,
 opens a separate window holding everything the loaded files record, laid out as
 collapsible cards in two columns.
 
@@ -182,8 +182,8 @@ and the render area.
 Every loaded cloud is reported, one group of cards each. Nothing is read from
 what is drawn, so clips, filters and the point budget change none of it.
 
-The report is built once as a document of sections and rows, then rendered twice
-— as HTML for the window and as plain text for `QCTools.fileInfo.report()` and
+The report is built once as a document of sections and rows, then rendered twice:
+as HTML for the window and as plain text for `QCTools.fileInfo.report()` and
 the in-page fallback. One source, so the two cannot drift.
 
 ### The window has no menu
@@ -191,7 +191,7 @@ the in-page fallback. One source, so the two cannot drift.
 Electron gives a `window.open` popup its stock File/Edit/View/Window/Help menu.
 That menu is wrong here and one item in it is actively destructive: the report's
 document is written in with `document.write` and has no URL of its own, so
-**View ▸ Reload reloads `about:blank`** — the report vanishes and the window is
+**View ▸ Reload reloads `about:blank`**, so the report vanishes and the window is
 left dead. `main.js` strips the menu in a `did-create-window` handler.
 
 Ctrl+A and Ctrl+C need no menu: Chromium handles both itself on Windows.
@@ -199,13 +199,13 @@ Ctrl+A and Ctrl+C need no menu: Chromium handles both itself on Windows.
 ### Two columns, packed rather than gridded
 
 A CSS grid lays cards out in rows, so a two-row card beside a thirty-row card
-leaves twenty-eight rows of hole — which is exactly what the first version did.
+leaves twenty-eight rows of hole, which is exactly what the first version did.
 Multi-column layout flows around that but splits any card taller than the column.
 
 So the cards are packed: tallest first into whichever column is currently
 shorter, then each column is rendered back in document order, so reading a column
-top to bottom still follows the report. A card marked wide — the big tables, the
-WKT, the density prose — closes the pair and spans both.
+top to bottom still follows the report. A card marked wide (the big tables, the
+WKT, the density prose) closes the pair and spans both.
 
 Two cards were also split up, because no packing can balance a card taller than
 everything beside it: the potree metadata into *potree octree* / *files on disk* /
@@ -215,14 +215,14 @@ height, against 28 rows of hole before.
 
 ### What it reports
 
-**Potree octree** — the whole of `metadata.json`: version, point count, encoding,
+**Potree octree** gives the whole of `metadata.json`: version, point count, encoding,
 root spacing, hierarchy depth and step size, position scale and offset, the
 cubic bounding box *and* the tight extent from the position attribute's range,
 the size of all three files on disk, a table of every stored attribute with its
 type and min/max, and the classification histogram as a table of classes present
 with counts and percentages.
 
-**LAS / LAZ / COPC** — the full public header field by field, including the
+**LAS / LAZ / COPC** gives the full public header field by field, including the
 generating software and system identifier; the global encoding as a value plus a
 named True/False for each of its bits; the point data record format spelled out;
 the point count broken down by return; scale, offset, min, max and extent as an
@@ -240,7 +240,7 @@ the well-known records decoded rather than listed:
 | `copc` 1 | the COPC info block: cube, root spacing, hierarchy page, GPS time range |
 
 This uses the `copc.js` build already bundled at `libs/copc/index.js` for
-Potree's own COPC support — `Las.Header`, `Las.Vlr` and `Copc.create` — so there
+Potree's own COPC support (`Las.Header`, `Las.Vlr` and `Copc.create`), so there
 is no new dependency. Its own file getter is a stub in that browser build, so the
 report supplies a `fs`-backed one.
 
@@ -257,7 +257,7 @@ additions in `src/desktop.js`, both marked `[QC Tools]`:
 
 - `writeSourceManifest()`, called from both converters
 - `loadDroppedPointcloud()` sets `pcoGeometry.url` for a dropped `.copc.laz`,
-  which `CopcLoader` does not — it keeps only its range getter, so the path the
+  which `CopcLoader` does not, because it keeps only its range getter, so the path the
   cloud came from is otherwise lost
 
 An octree converted before this existed has no manifest, and the report simply
@@ -268,12 +268,12 @@ says nothing about a source file.
 One raster underpins both the average density and the KML outline: a plan-view
 mask of where the cloud actually has points.
 
-It is built by reading **real point positions** out of `octree.bin` — but only a
+It is built by reading **real point positions** out of `octree.bin`, but only a
 few hundred thousand of them. Potree's coarse octree levels are not a coarse
 *region*; each one is a thinned copy of the **entire** cloud at a spacing that
 halves every level. So reading levels 0..k gives complete coverage at
 `spacing / 2ᵏ`, and three or four levels is enough to fill a mask 256 cells
-across. On a 30M point cloud that is 374,510 points in 32 nodes — 1.2% of the
+across. On a 30M point cloud that is 374,510 points in 32 nodes, 1.2% of the
 file, about 40 ms.
 
 Both files are read off disk rather than through the live octree, so asking for a
@@ -296,8 +296,8 @@ Details that had to be right:
 
 The first version used the octree hierarchy alone: mark the cube of every
 childless node. No point data, very fast, and **wrong in a way that matters**. A
-node exists only where there are points, but a *childless* node can be coarse —
-at a sparse fringe, 40 m across — and marking its whole cube both inflates the
+node exists only where there are points, but a *childless* node can be coarse,
+at a sparse fringe 40 m across, and marking its whole cube both inflates the
 area and fills in gaps. On the annulus test cloud it read 44,797 m² against a
 true 30,188 m², and it filled the hole in completely.
 
@@ -310,8 +310,8 @@ used, and warns when it is the coarse one.
 **Bounding-box footprint** divides the point count by the tight rectangle.
 **Occupied footprint** divides it by the mask.
 
-The bounding-box figure collapses whenever the cloud does not fill its rectangle
-— a corridor, a diagonal strip, anything with a lake in it. The occupied figure
+The bounding-box figure collapses whenever the cloud does not fill its rectangle:
+a corridor, a diagonal strip, anything with a lake in it. The occupied figure
 is the one to read. Both are whole-cloud averages, accurate to about a cell
 around the edges; a delivery is judged per cell, which is what the density probe
 and density colouring are for.
@@ -327,14 +327,14 @@ mask](#the-coverage-mask) is traced into closed rings along cell edges, so:
 
 - a cloud in two blocks comes out as two areas, in one `MultiGeometry` so it
   stays a single placemark you can switch on and off as one thing
-- a lake, or any gap in the returns bigger than a cell, comes out as a hole —
+- a lake, or any gap in the returns bigger than a cell, comes out as a hole,
   a KML `innerBoundaryIs` ring, which Google Earth renders as a hole
 
 How the tracing works:
 
 - **Boundary edges are oriented with the occupied cell on the left.** That makes
   outer rings come out counter-clockwise and holes clockwise, so they are told
-  apart by the sign of their area — no containment test needed for that part.
+  apart by the sign of their area, with no containment test needed for that part.
   Holes are then assigned to the smallest outer ring that contains them, using a
   sample point a quarter-cell into the hole rather than a vertex on its boundary.
 - **Two cells touching only at a corner** leave that lattice point with two ways
@@ -359,7 +359,7 @@ size, the number of areas and holes, the coordinate system and the centre.
 Getting a transform out of what LAS files actually contain took two fallbacks:
 
 - proj4 parses a WKT1 `PROJCS[...]` node, but **not** the `COMPD_CS[...]` that
-  wraps it whenever the file also declares a vertical system — which is the common
+  wraps it whenever the file also declares a vertical system, which is the common
   case. So the PROJCS node is extracted and handed over on its own.
 - `proj4("EPSG:32610")` throws. proj4 ships almost no EPSG definitions, so a
   GeoTIFF-keyed file with no WKT has only a code. UTM zones are built from the
@@ -411,22 +411,22 @@ second line.
 Four changes to `libs/potree/potree.js`, all marked `[QC Tools]`. Re-apply
 them after a Potree upgrade.
 
-**1. `Renderer` — tolerate attributes added after a buffer is built.** Three
+**1. `Renderer`: tolerate attributes added after a buffer is built.** Three
 places read `vbos.get(name)` without checking. `updateBuffer()` already creates a
 missing VBO; these just stopped it getting the chance. Without this, adding an
-attribute meant tearing down and rebuilding a node's whole GPU buffer set — one
+attribute meant tearing down and rebuilding a node's whole GPU buffer set, one
 teardown per node, which wrecked rendering whenever many nodes arrived at once.
 
-**2. `Renderer` — tolerate an attribute that is not in the point format.** See
+**2. `Renderer`: tolerate an attribute that is not in the point format.** See
 the constraint below.
 
-**3. `NodeLoader` — add `worker.onerror`.** Potree sets `worker.onmessage` but
+**3. `NodeLoader`: add `worker.onerror`.** Potree sets `worker.onmessage` but
 never `onerror`, so a decoder worker that throws leaves the node flagged
 `loading` and never returns its load slot. Potree allows four concurrent loads,
 so four such nodes stop *every* load in the application. The patch releases the
 node and slot, and gives up on a node after three failed decodes.
 
-**4. `ProfileRequest` — skip nodes flagged `failedToLoad`.** It re-queues any
+**4. `ProfileRequest`: skip nodes flagged `failedToLoad`.** It re-queues any
 node that is not yet loaded, so a node that can never load keeps the request
 alive forever; it never reaches `onFinish` and whatever awaits it waits for good.
 
@@ -436,7 +436,7 @@ Three things that look like improvements and are not. Each caused a
 hard-to-diagnose failure.
 
 **Never add anything to `pcoGeometry.pointAttributes`.** It is not a list of
-usable attributes — it is the point *format* description, handed straight to the
+usable attributes. It is the point *format* description, handed straight to the
 decoder worker. Registering a 4-byte `density` entry there made the worker expect
 four bytes per point that the file does not contain, so every node loaded after
 an analysis failed to decode and was skipped permanently. Whole regions then sat
@@ -445,8 +445,8 @@ the node geometries; the display range comes from `material.setRange()`.
 
 **Do not delete the VAO in `Renderer.deleteBuffer()`.** Potree leaks one per
 rebuilt buffer and cleaning it up looks obvious. `gl.deleteVertexArray` does not
-exist on this renderer's context — three.js guards the same call behind
-`capabilities.isWebGL2` — and adding it froze the viewer during ordinary
+exist on this renderer's context (three.js guards the same call behind
+`capabilities.isWebGL2`), and adding it froze the viewer during ordinary
 navigation, with no tool involved. The leak is small and pre-existing.
 
 **Do not trim the LRU after a scan.** A scan leaves it near `pointLoadLimit`,
@@ -457,7 +457,7 @@ it throws away nodes the renderer needs and collapses detail.
 Two shortcuts for computing density that also do not work:
 
 **Reading point counts from `hierarchy.bin`** instead of the points. The octree
-is additive — coarse levels hold a subsample spread across their whole cube — so
+is additive, because coarse levels hold a subsample spread across their whole cube, so
 per-node counts undercount every cell by 10–25% depending on how the tree fills
 out. Fast, and wrong in exactly the way that matters for a contractual threshold.
 
@@ -474,7 +474,7 @@ is an order of magnitude closer.
 **Sampling every Nth point.** Point order inside a node is a spatially structured
 scan pattern, so any index-based selection lands on a structured spatial subset,
 not a random one. On a uniform 225 pts/m² grid, 1-in-10 sampling reported cells
-between 160 and 420 — with a plain stride and again with a hashed index. It is
+between 160 and 420, with a plain stride and again with a hashed index. It is
 also not faster: on a cold cache the sampled run took 796 ms against 766 ms for
 the exact scan, because the time goes into loading nodes, not the counting loop.
 
@@ -516,7 +516,7 @@ Rendering health, on a real 30M point cloud, nine deep zooms across the tile:
 | Phase | Decode failures | Nodes loaded |
 | --- | --- | --- |
 | Navigation only, no tools | 0 | 1,147 |
-| Immediately after an analysis | 0 | — |
+| Immediately after an analysis | 0 | n/a |
 | Navigating afterwards | 0 | 1,153 |
 
 Repeated use, on a 9M point cloud, every measurement from an identical viewpoint:
@@ -530,9 +530,9 @@ Repeated use, on a 9M point cloud, every measurement from an identical viewpoint
 
 File info, against two synthetic clouds whose footprint is known exactly:
 
-- **L-shape** — two 200 x 20 m limbs sharing a corner in a 200 x 200 m box, at
+- **L-shape**: two 200 x 20 m limbs sharing a corner in a 200 x 200 m box, at
   400 pts/m². True footprint 7,600 m².
-- **Annulus + block** — a 100 m radius disc with a 30 m radius hole punched out of
+- **Annulus + block**: a 100 m radius disc with a 30 m radius hole punched out of
   the middle, plus a detached 40 x 40 m block, at 100 pts/m². True footprint
   30,188 m², one hole, two separate areas.
 
@@ -542,14 +542,14 @@ File info, against two synthetic clouds whose footprint is known exactly:
 | L-shape, density | 400 pts/m² | 76.0 (81% low) | 324.3 (19% low) | **412.5 (3.1% high)** |
 | Annulus, area | 30,188 m² | 73,595 m² | 44,797 m² | **30,637 m²** |
 | Annulus, density | 100 pts/m² | 41.0 (59% low) | 67.4 (33% high) | **98.5 (1.5% low)** |
-| Annulus, hole found | 1 | n/a | **0 — filled in** | **1** |
+| Annulus, hole found | 1 | n/a | **0, filled in** | **1** |
 
 Reading real positions is what makes it usable: an order of magnitude closer, and
 it is the only version that finds the hole at all.
 
 Some of the remaining error is the cell grid, not the sampling. Rasterising
 **every** point of the source file at the same cell size gives 7,739 m² for the
-L-shape and 30,795 m² for the annulus — so the discretisation alone accounts for
+L-shape and 30,795 m² for the annulus, so the discretisation alone accounts for
 +1.8% and +2.0%, and the subsampling contributes the rest. The bias is not
 one-directional, which is why the report no longer claims it is.
 
@@ -562,7 +562,7 @@ points of the source LAZ:
 | Density over coverage | 77.0 pts/m² | 77.4 pts/m² (0.5% high) |
 
 It also found a narrow north-south gap running most of the height of the strip.
-That gap is in the full-resolution raster too — a real hole in the data, not an
+That gap is in the full-resolution raster too. It is a real hole in the data, not an
 artefact.
 
 Traced outline geometry, on the annulus cloud:
@@ -578,7 +578,7 @@ Traced outline geometry, on the annulus cloud:
 | Rings closed, coordinates in lon/lat range | yes |
 | KML | well-formed, 2 `Polygon`, 1 `innerBoundaryIs`, 1 `MultiGeometry`, 4 KB |
 
-Also measured, on all four clouds — the two synthetic ones, a 30M point aerial
+Also measured, on all four clouds: the two synthetic ones, a 30M point aerial
 strip with a source manifest, an 84M point block without one:
 
 | Case | Result |
@@ -604,7 +604,7 @@ EPSG:32610 while its octree metadata declares nothing:
 
 | Case | Result |
 | --- | --- |
-| Centre of the KML outline | 35.863158, -119.159221 — the independently computed value |
+| Centre of the KML outline | 35.863158, -119.159221 (matches the independent calculation) |
 | Shape traced | 1 area, 2 holes, 52 vertices at 5.19 m cells |
 | Launch target | `Google Earth Pro\client\googleearth.exe`, found by path |
 | A cloud with no CRS (the L-shape) | button disabled and says why, no place offered |

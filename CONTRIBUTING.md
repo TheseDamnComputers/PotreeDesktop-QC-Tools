@@ -1,7 +1,7 @@
 # Contributing
 
 Bug reports, ideas and pull requests are all welcome. This is a small fork with a
-narrow purpose — checking the quality of a point cloud delivery — so the useful
+narrow purpose (checking the quality of a point cloud delivery), so the useful
 thing to know before changing anything is where the traps are.
 
 ## Read this first
@@ -9,14 +9,14 @@ thing to know before changing anything is where the traps are.
 [`src/QC_TOOLS.md`](src/QC_TOOLS.md) is the real documentation. Two sections of it
 matter more than the rest:
 
-- **[Constraints worth keeping](src/QC_TOOLS.md#constraints-worth-keeping)** —
+- **[Constraints worth keeping](src/QC_TOOLS.md#constraints-worth-keeping)**:
   changes that look like obvious improvements and each break something subtly.
   Every one of them cost hours to diagnose. The two that bite hardest:
   - never add anything to `pcoGeometry.pointAttributes`; it is the point *format*
     handed to the decoder worker, not a list of usable attributes
   - do not delete the VAO in `Renderer.deleteBuffer()`; `gl.deleteVertexArray`
     does not exist on this context and it freezes the viewer
-- **[Potree patches](src/QC_TOOLS.md#potree-patches)** — four changes to the
+- **[Potree patches](src/QC_TOOLS.md#potree-patches)**: four changes to the
   bundled `libs/potree/potree.js`, each marked with a `[QC Tools]` comment.
   **Re-apply them after any Potree upgrade**, or loading will wedge.
 
@@ -61,7 +61,7 @@ real viewer headlessly and asserts on numbers:
   `QCTools.polygon.cutFromPoints`, `QCTools.densityColor.analyse`,
   `QCTools.fileInfo.report`)
 - assert on renderer error count, `Potree.numNodesLoading`, deepest visible octree
-  level, visible node and point count — **from an identical camera position before
+  level, visible node and point count, **from an identical camera position before
   and after**, or the comparison means nothing
 - delete the script when you are done; it is scaffolding, not a fixture
 
@@ -84,8 +84,8 @@ Four lessons from doing this, each paid for the hard way:
 ## Screenshots for the docs
 
 The report window shows the **full path** of every file it read, so a screenshot
-taken from a normal working directory publishes your home directory — and with it
-your account name — into a public repository. It is easy to do without noticing.
+taken from a normal working directory publishes your home directory, and with it
+your account name, into a public repository. It is easy to do without noticing.
 
 Generate docs images from a throwaway path that carries no name, for example
 `C:\qc_demo\...`, and check the image before committing it. Keep them small; the
@@ -94,7 +94,7 @@ report is mostly white, so a 1180 × 860 capture is around 250 KB.
 ## Style
 
 Match the file you are editing. Tabs, and comments that say *why* rather than
-*what* — the surprising constraint, the measurement that settled a choice, the
+*what*: the surprising constraint, the measurement that settled a choice, the
 reason an obvious simplification does not work. Those are the comments that saved
 time later; a comment restating the code is not.
 
