@@ -38,6 +38,7 @@
 		initBoxClip(ctx, panel, clipMode);
 		const polygon = initPolygonCut(ctx, panel, clipMode);
 		const densityColor = initDensityColoring(ctx, panel);
+		const scanAngle = initScanAngle(ctx, panel);
 		initCutSettings(panel, clipMode);
 		// Lives in its own file: it reports on the files rather than driving the
 		// viewer, so it shares nothing with the tools above.
@@ -58,10 +59,21 @@
 
 		hardenNodeLoader(viewer);
 		applyDefaults(viewer);
+		// Colour-codes Potree's own Appearance attribute list. Independent of the
+		// panel above, so it installs itself against the sidebar rather than here.
+		if (window.QCAttrList) {
+			window.QCAttrList.install();
+		}
+		// Lights up Potree's own dormant OpenLayers map by handing it the CRS
+		// PotreeConverter drops, and adds the basemap and cache controls.
+		window.QCTools.map = window.QCMap ? window.QCMap.install(ctx, panel) : null;
+		window.QCTools.map3d = window.QCMap3D
+			? window.QCMap3D.install(ctx, panel, window.QCTools.map) : null;
 
 		window.QCTools.density = density;
 		window.QCTools.polygon = polygon;
 		window.QCTools.densityColor = densityColor;
+		window.QCTools.scanAngle = scanAngle;
 		window.QCTools.clipMode = clipMode;
 		window.QCTools.fileInfo = fileInfo;
 	}
@@ -2236,6 +2248,214 @@
 			get grid() { return grid; },
 		};
 	}
+	// -------------------------------------------------------------- scan angle
+
+	/**
+	 * Colours a cloud by how far off nadir each point was measured, symmetrically,
+	 * with a hard step at a chosen field of view.
+	 *
+	 * Symmetric because scan angle is signed and 0 is nadir, so -35 and +35 are
+	 * equally oblique and should read alike. Potree cannot do that with its own
+	 * controls: `getExtra()` clamps the gradient coordinate to 0..1 before the
+	 * texture lookup, so the Gradient panel's "Mirrored Repeat" has nothing to act
+	 * on. What works instead needs no shader change at all. Set the display range
+	 * to +-max|angle| so nadir lands exactly on the middle of the gradient, then
+	 * hand Potree a gradient that is itself a mirror about its midpoint.
+	 *
+	 * The hard step is the same idea as the density spec threshold: a point just
+	 * outside the field of view you are willing to accept should read as outside,
+	 * not as "nearly inside".
+	 */
+	function initScanAngle(ctx, panel) {
+		const viewer = ctx.viewer;
+		const ANGLE_UNITS = (window.QCAttrList && window.QCAttrList.angleUnits) || {};
+
+		panel.append($(`
+			<div class="divider"><span>Scan angle</span></div>
+			<li>
+				<span class="qc-row">
+					<span>Field of view</span>
+					<input id="qc_sa_fov" type="number" min="1" max="360" step="1" value="75" class="qc-num"/>
+					<span>&deg; total</span>
+				</span>
+			</li>
+			<li><div id="qc_sa_slider" class="qc-slider"></div></li>
+			<li id="qc_sa_status" class="qc-status">&nbsp;</li>
+			<li>
+				<span class="qc-row">
+					<input id="qc_sa_apply" type="button" value="Colour by scan angle"/>
+					<span style="flex-grow: 1"></span>
+					<input id="qc_sa_reset" type="button" value="Restore colours" disabled/>
+				</span>
+			</li>
+			<li class="qc-dim">Green at nadir through amber at the limit, red beyond
+				it. Both sides of the scan line are coloured alike.</li>
+		`));
+
+		const elFov = panel.find("#qc_sa_fov");
+		const elSlider = panel.find("#qc_sa_slider");
+		const elStatus = panel.find("#qc_sa_status");
+		const elApply = panel.find("#qc_sa_apply");
+		const elReset = panel.find("#qc_sa_reset");
+
+		const setStatus = (text) => elStatus.html(text || "&nbsp;");
+
+		let fov = 75;
+		let colouring = false;
+		let saved = null;
+
+		/** The scan angle attribute of a cloud, whichever of the two names it uses. */
+		function angleAttribute(pointcloud) {
+			for (const name of Object.keys(ANGLE_UNITS)) {
+				const attribute = pointcloud.getAttribute && pointcloud.getAttribute(name);
+				if (attribute && attribute.range) {
+					return { name: name, attribute: attribute, perUnit: ANGLE_UNITS[name] };
+				}
+			}
+			return null;
+		}
+
+		/** Every loaded cloud that records a scan angle at all. */
+		function targets() {
+			const found = [];
+			for (const pointcloud of viewer.scene.pointclouds) {
+				const found1 = angleAttribute(pointcloud);
+				if (found1) {
+					found.push({ pointcloud: pointcloud, ...found1 });
+				}
+			}
+			return found;
+		}
+
+		/** Widest angle the cloud actually records, in degrees, either side of nadir. */
+		function extentDegrees(target) {
+			const range = target.attribute.initialRange || target.attribute.range;
+			return Math.max(Math.abs(range[0]), Math.abs(range[1])) * target.perUnit;
+		}
+
+		/**
+		 * A gradient mirrored about its own midpoint, so that a display range of
+		 * -extent..+extent paints -X and +X identically. `limit` is the half angle
+		 * beyond which a point is out of spec.
+		 */
+		function symmetricGradient(limit, extent) {
+			const Color = Potree.Gradients.RAINBOW[0][1].constructor;
+			const red = () => new Color(0.75, 0.06, 0.06);
+			const amber = () => new Color(1.00, 0.62, 0.05);
+			const green = () => new Color(0.10, 0.68, 0.16);
+
+			// Half the accepted band as a fraction of the whole gradient.
+			const half = Math.min(limit / (2 * extent), 0.499);
+
+			if (limit >= extent) {
+				// Nothing is out of spec, so there is no step to draw.
+				return [[0.0, amber()], [0.5, green()], [1.0, amber()]];
+			}
+
+			const lo = 0.5 - half;
+			const hi = 0.5 + half;
+
+			return [
+				[0.0, red()],
+				[Math.max(lo - 0.002, 0.001), red()],
+				[lo, amber()],
+				[0.5, green()],
+				[hi, amber()],
+				[Math.min(hi + 0.002, 0.999), red()],
+				[1.0, red()],
+			];
+		}
+
+		function paint() {
+			const list = targets();
+			if (list.length === 0) {
+				return;
+			}
+
+			for (const target of list) {
+				const extent = extentDegrees(target);
+				const material = target.pointcloud.material;
+
+				// Symmetric about nadir, so 0 degrees falls exactly on the middle of
+				// the gradient. Without this the file's own lopsided range (say
+				// -39.81 to +40.49) puts nadir off centre and the mirror is wrong.
+				material.setRange(target.name,
+					[-extent / target.perUnit, extent / target.perUnit]);
+				material.gradient = symmetricGradient(fov / 2, extent);
+				material.activeAttributeName = target.name;
+			}
+
+			const widest = Math.max(...list.map(extentDegrees));
+			const outside = fov / 2 < widest;
+			setStatus(`Coloured by scan angle. The data reaches &plusmn;${widest.toFixed(1)}&deg;; `
+				+ (outside
+					? `red beyond &plusmn;${(fov / 2).toFixed(1)}&deg;.`
+					: `nothing falls outside a ${fov.toFixed(0)}&deg; field of view.`));
+		}
+
+		function apply() {
+			const list = targets();
+			if (list.length === 0) {
+				setStatus("No loaded cloud records a scan angle.");
+				return;
+			}
+
+			if (!saved) {
+				saved = list.map((target) => ({
+					pointcloud: target.pointcloud,
+					activeAttributeName: target.pointcloud.material.activeAttributeName,
+					gradient: target.pointcloud.material.gradient,
+					range: target.pointcloud.material.getRange(target.name),
+					name: target.name,
+				}));
+			}
+
+			colouring = true;
+			elReset.prop("disabled", false);
+			paint();
+		}
+
+		function restore() {
+			colouring = false;
+			for (const entry of saved || []) {
+				const material = entry.pointcloud.material;
+				material.gradient = entry.gradient;
+				if (entry.range) {
+					material.setRange(entry.name, entry.range);
+				}
+				material.activeAttributeName = entry.activeAttributeName;
+			}
+			saved = null;
+			elReset.prop("disabled", true);
+			setStatus("Original colouring restored.");
+		}
+
+		function setFov(value) {
+			fov = Math.min(Math.max(value, 1), 360);
+			elFov.val(fov);
+			elSlider.slider({ value: fov });
+			if (colouring) {
+				paint();
+			}
+		}
+
+		elSlider.slider({
+			value: fov, min: 1, max: 180, step: 1,
+			slide: (event, ui) => setFov(ui.value),
+		});
+		elFov.on("change", () => setFov(Number(elFov.val()) || 75));
+		elApply.click(apply);
+		elReset.click(restore);
+
+		return {
+			apply: apply,
+			restore: restore,
+			setFov: setFov,
+			get fov() { return fov; },
+			extents: () => targets().map((t) => ({ name: t.name, degrees: extentDegrees(t) })),
+		};
+	}
+
 	// ------------------------------------------------------------ cut settings
 
 	function initCutSettings(panel, clipMode) {

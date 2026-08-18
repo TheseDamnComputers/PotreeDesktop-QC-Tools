@@ -11,12 +11,14 @@ matter more than the rest:
 
 - **[Constraints worth keeping](src/QC_TOOLS.md#constraints-worth-keeping)**:
   changes that look like obvious improvements and each break something subtly.
-  Every one of them cost hours to diagnose. The two that bite hardest:
+  Every one of them cost hours to diagnose. The three that bite hardest:
   - never add anything to `pcoGeometry.pointAttributes`; it is the point *format*
     handed to the decoder worker, not a list of usable attributes
   - do not delete the VAO in `Renderer.deleteBuffer()`; `gl.deleteVertexArray`
     does not exist on this context and it freezes the viewer
-- **[Potree patches](src/QC_TOOLS.md#potree-patches)**: four changes to the
+  - do not style `<option>` elements to colour the attribute list; jQuery UI's
+    `selectmenu` hides the `<select>` and renders its own list
+- **[Potree patches](src/QC_TOOLS.md#potree-patches)**: five changes to the
   bundled `libs/potree/potree.js`, each marked with a `[QC Tools]` comment.
   **Re-apply them after any Potree upgrade**, or loading will wedge.
 
@@ -39,11 +41,12 @@ Node.js and a Windows machine are the only requirements; PotreeConverter ships i
 | --- | --- |
 | `src/qc_tools.js` | The four viewer tools |
 | `src/qc_fileinfo.js` | The file info report |
+| `src/qc_attrlist.js` | Colour-coding for Potree's own attribute dropdown |
 | `src/qc_tools.css` | Panel styling |
 | `src/QC_TOOLS.md` | Documentation, constraints, and the measurements behind the design |
-| `index.html` | Stylesheet, the two scripts, and `QCTools.install(viewer)` |
+| `index.html` | Stylesheet, the three scripts, and `QCTools.install(viewer)` |
 | `src/desktop.js`, `main.js` | Small additions marked `[QC Tools]` |
-| `libs/potree/potree.js` | Four patches marked `[QC Tools]` |
+| `libs/potree/potree.js` | Five patches marked `[QC Tools]` |
 
 Everything else is upstream PotreeDesktop. Keep changes to it minimal and marked,
 so a future Potree upgrade is a merge rather than an excavation.
@@ -100,6 +103,6 @@ time later; a comment restating the code is not.
 
 ## Upstream
 
-The four `potree.js` fixes are upstream defects and would be worth offering to
+The five `potree.js` fixes are upstream defects and would be worth offering to
 [potree/PotreeDesktop](https://github.com/potree/PotreeDesktop) as a pull request
 on their own. That has not been done yet.

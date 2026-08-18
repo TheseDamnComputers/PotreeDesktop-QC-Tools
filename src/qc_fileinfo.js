@@ -1653,6 +1653,145 @@ ${placemarks}
 		return found < 0 ? null : { offset: found, stride: stride };
 	}
 
+	/** Byte offset and size of a named attribute in the point record. */
+	function attributeLayout(metadata, name) {
+		let offset = 0;
+		let found = null;
+		let stride = 0;
+		for (const attribute of metadata.attributes || []) {
+			if (attribute.name === name) {
+				found = { offset: offset, size: attribute.size, type: attribute.type };
+			}
+			offset += attribute.size;
+			stride = offset;
+		}
+		return found ? Object.assign(found, { stride: stride }) : null;
+	}
+
+	/**
+	 * Where the ground is, in the cloud's own vertical datum.
+	 *
+	 * A basemap has no height of its own, so it has to be told one, and the
+	 * temptation is to fetch elevation from a terrain service. That is wrong here:
+	 * those publish orthometric height above a geoid, while a survey like these
+	 * records **ellipsoidal** height. Mixing them puts the map out by the geoid
+	 * undulation, which is about -32 m in California and a different figure
+	 * everywhere else. Taking the height from the point cloud costs nothing extra
+	 * and inherits the right datum by construction.
+	 *
+	 * Returns a coarse minimum-Z raster to drape over, plus flat-plane estimates
+	 * for when a drape is not wanted or not possible.
+	 *
+	 * Reads levels 0..depth of octree.bin directly, the same trick and the same
+	 * cost as the coverage mask: a few hundred thousand points, tens of
+	 * milliseconds. The coarse levels are a thinned copy of the whole cloud, so
+	 * they cover the full footprint.
+	 */
+	function groundSurface(metadata, url, hierarchy, cube, cellSize) {
+		if (metadata.encoding !== "DEFAULT" || !metadata.spacing) {
+			return null;
+		}
+		const position = positionLayout(metadata);
+		if (!position) {
+			return null;
+		}
+
+		const classification = attributeLayout(metadata, "classification");
+		const deepestPresent = hierarchy.byLevel.length - 1;
+
+		// Enough depth that a cell holds several points, capped so this stays a
+		// tens-of-milliseconds read rather than a full scan.
+		let depth = 0;
+		while (metadata.spacing / (1 << depth) > cellSize / 2 && depth < deepestPresent) {
+			depth++;
+		}
+		depth = Math.min(depth, MASK_MAX_LEVEL);
+
+		const width = Math.max(1, Math.ceil(cube.side / cellSize));
+		const minZ = new Float32Array(width * width).fill(Infinity);
+		const scale = metadata.scale;
+		const offset = metadata.offset;
+
+		// Reservoir of Z values for the percentile, and ground-class Z separately.
+		const sample = [];
+		const groundSample = [];
+		let read = 0;
+
+		const fs = require("fs");
+		let fd = null;
+		try {
+			fd = fs.openSync(siblingPath(url, "octree.bin"), "r");
+
+			for (let k = 0; k <= depth; k++) {
+				for (const node of hierarchy.byLevel[k] || []) {
+					const buffer = Buffer.allocUnsafe(node.byteSize);
+					fs.readSync(fd, buffer, 0, node.byteSize, node.byteOffset);
+					const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
+					for (let i = 0; i < node.numPoints; i++) {
+						const at = i * position.stride + position.offset;
+						const x = view.getInt32(at, true) * scale[0] + offset[0];
+						const y = view.getInt32(at + 4, true) * scale[1] + offset[1];
+						const z = view.getInt32(at + 8, true) * scale[2] + offset[2];
+
+						const ix = Math.floor((x - cube.minX) / cellSize);
+						const iy = Math.floor((y - cube.minY) / cellSize);
+						if (ix >= 0 && iy >= 0 && ix < width && iy < width) {
+							const index = iy * width + ix;
+							if (z < minZ[index]) {
+								minZ[index] = z;
+							}
+						}
+
+						read++;
+						sample.push(z);
+
+						if (classification && classification.size === 1) {
+							const code = view.getUint8(i * classification.stride
+								+ classification.offset);
+							if (code === 2) {
+								groundSample.push(z);
+							}
+						}
+					}
+				}
+			}
+		} catch (e) {
+			return null;
+		} finally {
+			if (fd !== null) {
+				try { fs.closeSync(fd); } catch (e) { /* already gone */ }
+			}
+		}
+
+		if (read === 0) {
+			return null;
+		}
+
+		const at = (values, fraction) => {
+			const sorted = Float64Array.from(values).sort();
+			return sorted[Math.min(sorted.length - 1,
+				Math.max(0, Math.floor(sorted.length * fraction)))];
+		};
+
+		return {
+			cell: cellSize,
+			width: width,
+			originX: cube.minX,
+			originY: cube.minY,
+			minZ: minZ,
+			filled: minZ.reduce((n, v) => n + (Number.isFinite(v) ? 1 : 0), 0),
+			pointsRead: read,
+			// The 2 % low tail tracks classified ground closely and, unlike the
+			// bounding-box minimum, is not dragged down by a handful of low
+			// outliers: on a real delivery the minimum sat 112 m below the ground.
+			lowPercentile: at(sample, 0.02),
+			median: at(sample, 0.5),
+			groundClassMedian: groundSample.length > 100 ? at(groundSample, 0.5) : null,
+			groundClassPoints: groundSample.length,
+		};
+	}
+
 	/**
 	 * The plan-view coverage mask, built from real point positions.
 	 *
@@ -2849,7 +2988,194 @@ ${placemarks}
 		};
 	}
 
+	/**
+	 * What the LAS/LAZ behind a loaded cloud actually records: its point data
+	 * record format, and the names of any extra-bytes dimensions.
+	 *
+	 * The attribute list needs this to show fields the conversion did not carry
+	 * over. PotreeConverter drops several of them outright, and a converted
+	 * octree keeps no record of what it dropped, so the source file is the only
+	 * place the answer exists.
+	 *
+	 * Null when there is nothing to read: an octree converted by another tool has
+	 * no `qc_source.json`, and the source LAZ may since have moved or gone.
+	 */
+	async function sourceRecord(pointcloud) {
+		const geometry = pointcloud && pointcloud.pcoGeometry;
+		if (!geometry) {
+			return null;
+		}
+
+		const candidates = sourceFiles(geometry.url, geometry.type === "copc");
+		if (candidates.length === 0) {
+			return null;
+		}
+
+		const { Las } = window.Copc;
+		const path = candidates[0].path;
+		let getter = null;
+
+		try {
+			getter = fileGetter(path);
+			const header = Las.Header.parse(
+				await getter(0, Las.Constants.minHeaderLength));
+			const vlrs = await Las.Vlr.walk(getter, header);
+
+			let extra = [];
+			const ebVlr = Las.Vlr.find(vlrs, "LASF_Spec", 4);
+			if (ebVlr && ebVlr.contentLength) {
+				try {
+					extra = Las.ExtraBytes.parse(await Las.Vlr.fetch(getter, ebVlr))
+						.map((descriptor) => descriptor.name)
+						.filter(Boolean);
+				} catch (e) {
+					// A malformed descriptor block costs the extra-bytes half of the
+					// answer, not the whole answer.
+				}
+			}
+
+			return {
+				path: path,
+				pointFormat: header.pointDataRecordFormat,
+				extra: extra,
+			};
+		} catch (e) {
+			// Worth a line: the manifest named a file, so failing to read it means
+			// the source moved or is malformed, which is not the same as "no
+			// manifest" and is worth knowing about.
+			console.warn("[QC Tools] could not read the source header at", path, e);
+			return null;
+		} finally {
+			if (getter) {
+				getter.close();
+			}
+		}
+	}
+
+	/**
+	 * The EPSG code of the projected system out of a GeoTIFF key directory.
+	 *
+	 * The record is a 4-value header (version, revision, minor, key count)
+	 * followed by four uint16 per key: id, tag location, count, value. A location
+	 * of 0 means the value is the number itself rather than an index into another
+	 * record, which is the only form a bare EPSG code takes. Key 3072 is
+	 * ProjectedCSType.
+	 */
+	function epsgFromGeoKeys(raw) {
+		const keys = new Uint16Array(raw.buffer, raw.byteOffset,
+			Math.floor(raw.byteLength / 2));
+		if (keys.length < 4) {
+			return null;
+		}
+
+		const count = keys[3];
+		for (let i = 0; i < count; i++) {
+			const at = 4 + i * 4;
+			if (at + 3 >= keys.length) {
+				break;
+			}
+			const keyId = keys[at];
+			const location = keys[at + 1];
+			const value = keys[at + 3];
+			if (keyId === 3072 && location === 0 && value > 0 && value < 32767) {
+				return value;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The OGC WKT of the file a loaded cloud came from, or null.
+	 *
+	 * The basemap needs this and PotreeConverter throws it away: `metadata.json`
+	 * only carries a projection when the converter was given `--projection`, so a
+	 * normal conversion leaves Potree with no idea where on the earth it is.
+	 */
+	async function sourceCrs(pointcloud) {
+		const geometry = pointcloud && pointcloud.pcoGeometry;
+		if (!geometry) {
+			return null;
+		}
+
+		const candidates = sourceFiles(geometry.url, geometry.type === "copc");
+		if (candidates.length === 0) {
+			return null;
+		}
+
+		const { Las, Binary } = window.Copc;
+		let getter = null;
+
+		try {
+			getter = fileGetter(candidates[0].path);
+			const header = Las.Header.parse(
+				await getter(0, Las.Constants.minHeaderLength));
+			const vlrs = await Las.Vlr.walk(getter, header);
+
+			const wktVlr = Las.Vlr.find(vlrs, "LASF_Projection", 2112);
+			if (wktVlr && wktVlr.contentLength) {
+				return Binary.toCString(await Las.Vlr.fetch(getter, wktVlr));
+			}
+
+			// No WKT record. GeoTIFF keys are the other way a LAS declares a CRS,
+			// and crsFromGeoKeys already turns those into an EPSG code proj4 can
+			// use for the UTM zones, which is most aerial delivery.
+			const geoKeyVlr = Las.Vlr.find(vlrs, "LASF_Projection", 34735);
+			if (geoKeyVlr && geoKeyVlr.contentLength) {
+				const raw = await Las.Vlr.fetch(getter, geoKeyVlr);
+				const epsg = epsgFromGeoKeys(raw);
+				return epsg ? `EPSG:${epsg}` : null;
+			}
+
+			return null;
+		} catch (e) {
+			console.warn("[QC Tools] could not read a coordinate system:", e);
+			return null;
+		} finally {
+			if (getter) {
+				getter.close();
+			}
+		}
+	}
+
+	/**
+	 * Ground heights for a loaded cloud, assembling what groundSurface needs.
+	 *
+	 * Only works on a DEFAULT-encoded Potree octree read from disk, which is what
+	 * the converter here produces. Brotli octrees and COPC would need Potree's own
+	 * decoder rather than a direct read, the same limitation the coverage mask has.
+	 */
+	function groundFor(pointcloud, cellSize) {
+		const geometry = pointcloud && pointcloud.pcoGeometry;
+		const metadata = geometry && geometry.loader ? geometry.loader.metadata : null;
+		const url = geometry ? geometry.url : null;
+
+		if (!metadata || !url || !metadata.boundingBox || !metadata.hierarchy) {
+			return null;
+		}
+
+		const cube = {
+			minX: metadata.boundingBox.min[0],
+			minY: metadata.boundingBox.min[1],
+			side: metadata.boundingBox.max[0] - metadata.boundingBox.min[0],
+		};
+
+		try {
+			const buffer = require("fs").readFileSync(siblingPath(url, "hierarchy.bin"));
+			const walk = potreeFrontier(metadata, buffer);
+			return groundSurface(metadata, url, walk, cube,
+				cellSize || Math.max(2, cube.side / 256));
+		} catch (e) {
+			console.warn("[QC Tools] could not read ground heights:", e);
+			return null;
+		}
+	}
+
 	window.QCFileInfo = {
 		install: install,
+		groundFor: groundFor,
+		sourceRecord: sourceRecord,
+		sourceCrs: sourceCrs,
+		groundSurface: groundSurface,
+		attributeLayout: attributeLayout,
 	};
 })();

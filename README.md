@@ -1,9 +1,11 @@
 # PotreeDesktop + QC Tools
 
-A fork of [PotreeDesktop](https://github.com/potree/PotreeDesktop) with five
+A fork of [PotreeDesktop](https://github.com/potree/PotreeDesktop) with six
 tools for checking point cloud quality: measure local point density, isolate a
 region with sliders or a drawn polygon, colour a whole cloud against a density
-specification, and read back everything the files record.
+specification or by scan angle off nadir, and read back everything the files
+record. Potree's own attribute
+dropdown is colour-coded too, so it is clear which entries are really in the data.
 
 Everything else is stock PotreeDesktop, the desktop build of
 [Potree](https://github.com/potree/potree) by Markus Schütz.
@@ -18,7 +20,9 @@ Everything else is stock PotreeDesktop, the desktop build of
 | **Box clip** | Six walls on three two-handle sliders (X, Y and Z min/max) to isolate a region. GPU-side, so instant on large clouds. |
 | **Polygon cut** | Draw a shape and keep only what is inside it, extruded straight down. Your view is never moved. |
 | **Density colouring** | Colour the whole cloud by points/m² against a spec, red below the limit through orange to green, with a live threshold slider. |
+| **Scan angle colouring** | Colour by how far off nadir each point was measured, symmetrically about the scan line, with a hard step at a chosen field of view. Set it to your scanner's real FOV and the red shows what a narrower acceptance would discard. |
 | **File info** | One click for everything the files record: LAS/COPC public header, every VLR decoded, coordinate system, compression, attribute ranges, classes present, average points/m², all as collapsible cards of selectable text, with a button to show the cloud's real coverage in Google Earth. |
+| **Attribute list colour-coding** | Potree's own Appearance dropdown, marked up by where each entry comes from: green for what is really in the cloud, purple for the viewer's own colouring modes, yellow for attributes it could colour by that this delivery does not have, orange for fields the source LAS records that the conversion did not carry over. |
 
 The probe and the density colouring both count only points that are **currently
 visible**: GPS time, return, source id and classification filters and any active
@@ -30,6 +34,20 @@ plan-view shape as KML, not a bounding box. Separate blocks come out as separate
 areas, and a lake or a gap in the returns comes out as a hole.
 
 ![The File info report](docs/file-info.png)
+
+Stock Potree lists the cloud's real attributes and its own colouring modes in one
+flat dropdown, so `intensity` and `intensity gradient` read as equally solid
+properties of the data. It also simply omits what is missing, so "this delivery
+has no RGB" and "RGB is in there and I have not scrolled to it" look identical.
+The colour-coded list separates the cases and counts each group.
+
+The orange group answers a question the octree cannot: PotreeConverter drops
+several LAS fields outright and packs others into a single byte, and a converted
+octree keeps no record of what it lost. On a point data record format 6 delivery
+that is seven fields. Reading the source LAS header back is the only way to know,
+and File info already does it, so the dropdown asks it.
+
+![The attribute list](docs/attribute-list.png)
 
 ## Getting started
 
@@ -56,7 +74,7 @@ The tools appear in a **QC Tools** section in the sidebar.
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Where the traps are, and how to verify a change without a test suite |
 
 Two sections of `QC_TOOLS.md` are worth reading before changing anything:
-[Constraints worth keeping](src/QC_TOOLS.md#constraints-worth-keeping), five
+[Constraints worth keeping](src/QC_TOOLS.md#constraints-worth-keeping), seven
 changes that look like improvements and each break something subtly; and
 [Potree patches](src/QC_TOOLS.md#potree-patches), which must be re-applied after
 a Potree upgrade.
@@ -83,7 +101,7 @@ page loaded in the window has full access to the machine, so **only ever point i
 at your own local files.**
 
 The pinned Electron version is old. Upgrading it is not difficult but it does risk
-the four `potree.js` patches and the rendering behaviour they fix, so it wants
+the five `potree.js` patches and the rendering behaviour they fix, so it wants
 doing deliberately with the verification steps in
 [`CONTRIBUTING.md`](CONTRIBUTING.md) rather than as a drive-by bump.
 
@@ -93,16 +111,17 @@ doing deliberately with the verification steps in
 | --- | --- |
 | `src/qc_tools.js` | The four viewer tools |
 | `src/qc_fileinfo.js` | The file info report |
+| `src/qc_attrlist.js` | Colour-coding for Potree's own attribute dropdown |
 | `src/qc_tools.css` | Panel styling |
 | `src/QC_TOOLS.md` | Documentation, including the constraints and measurements behind the design |
-| `index.html` | Four added lines: the stylesheet, the two scripts, and `QCTools.install(viewer)` |
+| `index.html` | Five added lines: the stylesheet, the three scripts, and `QCTools.install(viewer)` |
 | `src/desktop.js` | Two additions marked `[QC Tools]`, so a converted octree can still name the file it came from |
 | `main.js` | One addition marked `[QC Tools]`, so the report window does not get Electron's stock menu |
-| `libs/potree/potree.js` | Four small patches, each marked `[QC Tools]` |
+| `libs/potree/potree.js` | Five small patches, each marked `[QC Tools]` |
 
 ### Changes to Potree itself
 
-Four defects in the bundled `libs/potree/potree.js` had to be fixed for this to
+Five defects in the bundled `libs/potree/potree.js` had to be fixed for this to
 work. Each is marked with a `[QC Tools]` comment explaining what it fixes.
 Re-apply them after updating Potree.
 
@@ -118,6 +137,11 @@ Re-apply them after updating Potree.
    its load slot. Four such nodes stop every load in the application.
 4. **`ProfileRequest`**: it re-queues any node that is not yet loaded, so a node
    that can never load kept the request alive forever and it never completed.
+5. **`Renderer`**: colouring by any attribute of 4 bytes or fewer produced two
+   flat colours and a range slider that did nothing. The decoder only rescales
+   attributes *wider* than 4 bytes into 0..1; the renderer assumed all of them
+   were rescaled, so the shader clamped raw values to 0 or 1. That covered scan
+   angle, user data, classification flags and every small extra-bytes attribute.
 
 These are upstream bugs rather than anything specific to these tools; a
 full-resolution read of a cloud is just an unusually good way to meet them.

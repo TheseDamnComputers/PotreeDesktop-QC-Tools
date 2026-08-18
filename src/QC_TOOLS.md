@@ -4,7 +4,9 @@ Additions to PotreeDesktop for point cloud quality checking: measure local point
 density, isolate a region, colour the whole cloud against a density spec, and
 report everything the loaded files record.
 
-Everything lives in a **QC Tools** section in the sidebar.
+The six tools live in a **QC Tools** section in the sidebar. The last addition,
+[attribute list colour-coding](#7-attribute-list-colour-coding), has no panel of
+its own: it marks up Potree's Appearance dropdown in place.
 
 ## Files
 
@@ -12,11 +14,12 @@ Everything lives in a **QC Tools** section in the sidebar.
 | --- | --- |
 | `src/qc_tools.js` | The four viewer tools |
 | `src/qc_fileinfo.js` | The file info report |
+| `src/qc_attrlist.js` | Colour-coding for Potree's own attribute dropdown |
 | `src/qc_tools.css` | Panel styling |
-| `index.html` | Four lines: the stylesheet, the two scripts, and `QCTools.install(viewer)` inside `viewer.loadGUI()` |
+| `index.html` | Five lines: the stylesheet, the three scripts, and `QCTools.install(viewer)` inside `viewer.loadGUI()` |
 | `src/desktop.js` | Two additions marked `[QC Tools]`, see [File info](#5-file-info) |
 | `main.js` | One addition marked `[QC Tools]`: strips the stock menu off the report window |
-| `libs/potree/potree.js` | Four small patches, each marked `[QC Tools]`, see [Potree patches](#potree-patches) |
+| `libs/potree/potree.js` | Five small patches, each marked `[QC Tools]`, see [Potree patches](#potree-patches) |
 
 Launch with the `Potree QC Viewer` shortcut in the project folder, or:
 
@@ -383,6 +386,215 @@ QCTools.fileInfo.showFile(path);         // and in its own window
 QCTools.fileInfo.openInGoogleEarth(places);   // model.places from reportModel()
 ```
 
+## 6. Scan angle colouring
+
+Colours the cloud by how far off nadir each point was measured, **symmetrically**,
+with a hard step at a chosen field of view.
+
+- Set **Field of view** in whole degrees, by the box or the slider, and press
+  **Colour by scan angle**.
+- Green at nadir, ramping through amber at the limit, solid red beyond it.
+- Both sides of the scan line are coloured alike: -35 and +35 degrees are equally
+  oblique and read the same.
+- **Restore colours** puts the previous attribute, gradient and display range back.
+
+Set the limit to your scanner's real field of view and the red shows what a
+narrower acceptance would have thrown away. It colours only: red points stay
+visible and still count in the density probe and the density colouring.
+
+### Why it is not just a gradient setting
+
+Potree cannot do this with its own controls. `getExtra()` clamps the gradient
+coordinate to 0..1 *before* the texture lookup, so the Gradient panel's
+**Mirrored Repeat** has nothing left to act on.
+
+What works instead needs no shader change:
+
+1. Set the display range to **plus or minus max|angle|**, so nadir falls exactly
+   on the middle of the gradient. The file's own range is lopsided, typically
+   something like -39.81 to +40.49, which would put nadir off centre and make any
+   mirror wrong.
+2. Hand Potree a gradient that is **itself a mirror about its midpoint**, with a
+   hard step at the accepted half angle. Gradients are plain `[[stop, Colour]]`
+   arrays, which is the same mechanism the density spec threshold already uses.
+
+The hard step is deliberate, for the same reason as the density threshold: a
+point just outside the field of view you are willing to accept should read as
+outside, not as nearly inside.
+
+### Scripting
+
+```js
+QCTools.scanAngle.setFov(60);      // whole angle, degrees
+QCTools.scanAngle.apply();
+QCTools.scanAngle.extents();       // what each cloud actually reaches, in degrees
+QCTools.scanAngle.restore();
+```
+
+## 7. Attribute list colour-coding
+
+This one has no panel and no button. It marks up Potree's own **Appearance ▸
+Attribute** dropdown so you can tell, at a glance, what the delivery actually
+contains.
+
+![The attribute list](../docs/attribute-list.png)
+
+| Colour | Meaning |
+| --- | --- |
+| Green | Really recorded in this point cloud |
+| Purple | A viewer colouring mode, computed rather than read |
+| Yellow, italic, disabled | A LAS attribute Potree could colour by, absent from this cloud |
+| Orange, italic, disabled | Recorded in the source LAS/LAZ, but not carried into the converted octree |
+
+Stock Potree lists the cloud's real attributes and its own colouring modes in one
+flat list, so `intensity` and `intensity gradient` read as equally solid
+properties of the data. One is a measurement in the file; the other is a texture
+lookup Potree applies to it.
+
+The yellow group is the part worth having. Stock Potree simply omits what is
+missing, so "this delivery has no RGB" and "RGB is in there and I have not
+scrolled to it" look identical. Listing the absent ones, disabled, says which.
+A legend under the dropdown counts each group, and the closed dropdown carries a
+stripe in its own colour, so the current choice reads without opening the list.
+
+Orange is the opposite finding, and the two must not be confused: the field *is*
+in the delivery and the conversion did not carry it over. On a delivery in point
+data record format 6 that is seven entries every time, so it is not an edge case.
+
+### Where the groups come from
+
+The **green** set is derived by subtraction, not by reading the point cloud:
+anything in the dropdown that is not one of Potree's seven fixed viewer modes
+came from `pcoGeometry.pointAttributes.attributes` and is therefore genuinely in
+the file. That keeps it correct whichever cloud the sidebar has selected, and it
+covers extra-bytes attributes such as `Reflectance` for free. It is the whole
+attribute set, not a filtered view of it: the canonical list below is used only
+for the yellow diff and never constrains what shows up green.
+
+**Green means "in this octree", which on a converted cloud is not always the same
+as "in the source LAZ".** PotreeConverter takes an `--attributes` argument, so a
+conversion can be told to write a subset, and a converted octree then has no
+record of what was dropped. If that distinction matters, [File info](#5-file-info)
+reads the source LAS header through `qc_source.json` and lists what the original
+file actually held.
+
+The **orange** set is a diff the other way, against the source file. File info
+already reads the LAS public header back through `qc_source.json`, so the
+dropdown asks it for the point data record format and any extra-bytes dimensions,
+expands the format into the fields that record actually holds, and lists whatever
+the octree has no attribute for. That read is off disk, so unlike the other three
+groups it appears a moment after the panel does.
+
+Two things are lost, for different reasons:
+
+| Field | Why it is not in the octree |
+| --- | --- |
+| `scan direction flag`, `edge of flight line`, `scanner channel` | PotreeConverter never writes them |
+| `synthetic flag`, `key-point flag`, `withheld flag`, `overlap flag` | Packed into `classification flags`; colour by that and read the bits |
+
+`classification flags` is the low nibble of the format 6 flag byte and nothing
+more. Measured against a source where all eight bits varied, its range came out
+0 to 15, so bits 4 to 7 (scanner channel, scan direction, edge of flight line)
+are gone rather than merely packed. That measurement is the whole basis for the
+split above, and it is worth repeating rather than assuming after a converter
+upgrade.
+
+On the legacy point formats the three class-flag bits live in the classification
+byte, which PotreeConverter writes as classification alone, so they are lost
+outright there and the table shifts accordingly.
+
+When there is no source to read (an octree converted by another tool, or a source
+file that has since moved) the group is simply absent and the legend says so,
+rather than implying nothing was dropped.
+
+The **yellow** set is a diff against a fixed list of the LAS attributes
+PotreeConverter writes out and Potree can colour by. Two of them are spelt
+differently depending on point format, so the list matches alias sets rather than
+single names:
+
+| Canonical | Also accepted | Why |
+| --- | --- | --- |
+| `rgba` | `rgb` | The converter writes `rgb`; Potree's loader renames it on the way in |
+| `scan angle` | `scan angle rank` | Point formats 0-5 use the older name |
+
+`classification flags` exists only from point format 6 on, so a legacy cloud
+correctly reports it missing.
+
+### The gotcha, if this is ever changed
+
+The `<select id="optMaterial">` is wrapped in a jQuery UI `selectmenu`, which
+hides the native element and renders its own `<ul>` of `<li>`. **Styling
+`<option>` has no visible effect at all.** Worse, selectmenu rebuilds that `<ul>`
+from scratch on every `refresh`, and Potree refreshes on two material events, so
+marking up the generated items once does not survive either. The classes are
+carried through the widget's `_renderItem`, which is the only place they stick.
+
+There is no patch to `potree.js` for this. `PropertiesPanel` is a bundle-local
+class with no instance reachable from outside, so there is nothing to wrap;
+instead a delegated `selectmenucreate` listener on the document catches every
+rebuild of the panel. Potree appends the panel to the sidebar before it builds
+the dropdown, so the event does bubble.
+
+### Scan angle in degrees
+
+Selecting a scan angle puts the whole **Extra Attribute** control into degrees:
+the caption, the numbers, and the slider's travel.
+
+```
+Scan angle: -10.00 to 10.00 degrees
+[----|=====|--------]
+stored as -1667 to 1667, in 0.006 degree steps
+```
+
+Potree has no LAS semantics, so out of the box it captions this "Scalar range"
+and drags in whatever integer the file stores. On a point format 6 cloud that is
+a four-digit number nobody can aim with, because one degree of scan angle is 167
+slider units. Only `material.setRange` still speaks raw, because that is what the
+shader consumes; the raw figures stay on screen underneath for reference.
+
+Point formats 6-10 store `scan angle` as a signed int16 in **0.006 degree
+increments**, plus or minus 30000 for plus or minus 180 degrees. Formats 0-5
+stored `scan angle rank` as a signed *byte* in whole degrees, plus or minus 90.
+Whole-degree precision belongs to the legacy field alone, which is the usual
+source of the confusion.
+
+Three things it has to get right, all of which were wrong first:
+
+- **Read the attribute from the material, not the dropdown.** Potree writes that
+  label from `material.getRange(activeAttributeName)`. The two disagree while the
+  panel is mid-update, and reading the dropdown converted intensity's 0..65535
+  into "0.00 to 393.21 degrees" displayed against scan angle.
+- **Rescale the slider idempotently, not once per attribute change.** The
+  material listener fires from inside `updateMaterialPanel`, at the line that
+  sets `activeAttributeName`, which is *before* the line that builds the slider.
+  Tuning on the attribute change therefore ran first and was overwritten a moment
+  later, and a has-it-changed guard then blocked the repair. Comparing the
+  slider's current scale against the wanted one heals it whichever order the two
+  run in, and costs nothing on the passes where it is already right.
+- **Clear the readout when switching away, not just hide it.** Potree leaves the
+  label alone for an attribute with no scalar range, so a stale reading would sit
+  hidden and reappear against the wrong attribute.
+
+### Menu positioning, and the faded rows
+
+jQuery UI opens a selectmenu with `collision: "none"`, so the menu is pinned
+under its button and hangs off the bottom of the window once it is tall enough.
+Stock Potree already came within a few pixels of that on a 1100 px window, and a
+format 6 delivery adds eight more rows. The widget's `position` option is set to
+`flipfit` so it goes above the button when there is no room below, and
+`#optMaterial-menu` gets a `max-height` so a long list scrolls.
+
+`jquery-ui.theme.css` also puts `opacity: .35` on a disabled item, which faded
+the tint and the stripe along with the text and left the two disabled groups
+looking like each other and like nothing much. The italics and the muted text
+colour already say "not selectable", so the opacity is overridden back to 1.
+
+**That class goes on the `<li>`, not the `<div>` inside it.** Overriding it on
+the `<div>` looks correct in `getComputedStyle`, because opacity composites from
+the ancestor rather than inheriting: the child still computes to 1 while
+rendering at .35. The harness asserted on the child, passed, and the screenshot
+showed the fault. Assert on the `<li>`.
+
 ## Defaults on startup
 
 | Setting | Potree default | Here |
@@ -408,7 +620,7 @@ second line.
 
 ## Potree patches
 
-Four changes to `libs/potree/potree.js`, all marked `[QC Tools]`. Re-apply
+Five changes to `libs/potree/potree.js`, all marked `[QC Tools]`. Re-apply
 them after a Potree upgrade.
 
 **1. `Renderer`: tolerate attributes added after a buffer is built.** Three
@@ -430,9 +642,20 @@ node and slot, and gives up on a node after three failed decodes.
 node that is not yet loaded, so a node that can never load keeps the request
 alive forever; it never reaches `onFinish` and whatever awaits it waits for good.
 
+**5. `Renderer`: map raw attribute values, not only rescaled ones.**
+`DecoderWorker.js` packs an attribute into 0..1 only when its type is *wider than
+4 bytes*; int8/16/32, uint8/16/32 and float32 are copied through raw. The
+renderer computed `uExtraScale` and `uExtraOffset` as though every attribute were
+rescaled, so `getExtra()` evaluated `clamp(rawValue, 0, 1)` and any such attribute
+rendered as exactly two flat colours, with a range slider that appeared to do
+nothing. It affected scan angle, scan angle rank, user data, classification flags
+and every extra-bytes attribute of 4 bytes or fewer; `gps-time` was unaffected
+because a double is 8 bytes. The fix picks the `[0, 1]` branch that the density
+colouring already relied on, which is the correct mapping for a raw buffer.
+
 ## Constraints worth keeping
 
-Three things that look like improvements and are not. Each caused a
+Six things that look like improvements and are not. Each caused a
 hard-to-diagnose failure.
 
 **Never add anything to `pcoGeometry.pointAttributes`.** It is not a list of
@@ -448,6 +671,37 @@ rebuilt buffer and cleaning it up looks obvious. `gl.deleteVertexArray` does not
 exist on this renderer's context (three.js guards the same call behind
 `capabilities.isWebGL2`), and adding it froze the viewer during ordinary
 navigation, with no tool involved. The leak is small and pre-existing.
+
+**Do not represent a missing attribute by adding to `pointAttributes` either.**
+It is the same object as above and the same failure. The yellow entries in the
+attribute list are `<option>` elements and nothing more: they exist in the
+dropdown and nowhere else, which is why they are disabled rather than selectable.
+
+**Do not style `<option>` elements to colour the attribute list.** jQuery UI's
+`selectmenu` hides the native `<select>` entirely and renders its own `<ul>`, so
+the rules apply to nothing you can see. It also rebuilds that `<ul>` on every
+`refresh`, and Potree refreshes on two material events, so marking the generated
+`<li>` items directly does not survive either. Go through the widget's
+`_renderItem`.
+
+**Never set `pointcloud.projection` to something proj4 has not been tested
+against.** Potree reaches for it from the render path, and proj4 does not fail
+politely: given a WKT it cannot parse it throws *the whole WKT string* as the
+exception, with no `Error` wrapper and no stack. That escapes as an uncaught
+error and the cloud renders zero nodes, which looks like the loader failing
+rather than a coordinate problem. Two ordinary cases trigger it:
+
+- A survey usually declares a **compound** system, horizontal plus vertical, as
+  `COMPD_CS[..., PROJCS[...], VERT_CS[...]]`. proj4 cannot parse `COMPD_CS`. Only
+  the horizontal half means anything to a 2D basemap, so lift the `PROJCS` out.
+- proj4 ships almost no EPSG table, so `proj4("EPSG:3006")` throws on a perfectly
+  valid code.
+
+`usableProjection()` in `qc_map.js` reduces the compound form and then *builds a
+transform and runs a point through it*, because proj4 accepts many strings at
+construction and only fails on use. Anything that does not survive that is left
+unset, and the map says so, rather than being handed over and taking the viewer
+down.
 
 **Do not trim the LRU after a scan.** A scan leaves it near `pointLoadLimit`,
 which looks like a leak. It is not: `pointLoadLimit` is deliberately
@@ -613,6 +867,61 @@ COPC is the one path with no test behind it: there was no COPC file to hand, onl
 a 133-byte stub. The header and VLR half of the report is shared with LAS and is
 covered above; the info block and the hierarchy walk are not, and both are wrapped
 so a failure prints a line instead of losing the report.
+
+Attribute list colour-coding, against nine converted clouds whose attribute set
+is known exactly: point formats 6 (no colour) and 7 (colour); the legacy formats
+0 (neither colour nor GPS time), 2 (colour only) and 3 (both); and four carrying
+extra bytes, including a pair declared `float64`, which is the type most likely
+to fall over on the way to a shader. It does not: the ranges survive and the
+shader compiles.
+
+| Case | Result |
+| --- | --- |
+| Green set against `pcoGeometry.pointAttributes.attributes` | identical on all six |
+| Extra-bytes attributes classified | green, as data |
+| `scan angle rank` on a legacy cloud | green, and `scan angle` **not** listed missing |
+| `classification flags` on a legacy cloud | listed missing, correctly |
+| `rgba` where the source has `rgb` | green, not listed missing |
+| Any name both green and yellow | never |
+| Rendered rows carrying a group class | all of them, on all six |
+| Backgrounds per group | one each, four distinct, none the untinted default |
+| Any row rendered faded | none (the `.35` disabled opacity is overridden) |
+| Fields the conversion dropped, format 6 source | seven listed orange, every time |
+| Fields the conversion dropped, legacy source | five listed orange (no scanner channel in the record) |
+| A name in two groups at once | never |
+| Extra bytes that did convert | green, never also orange |
+| No source file to read | group absent, legend says so, no false all-clear |
+| Highlighted row | keeps its group colour rather than reverting to grey |
+| Yellow rows | `ui-state-disabled`; clicking one leaves the attribute unchanged |
+| After a `selectmenu` refresh | every class still present |
+| After selecting another object and coming back | panel rebuilt, every class back, one legend |
+| Open menu against the window | inside it, top and bottom, on all six |
+| Sideways scroll in the sidebar | none |
+
+Scan angle colouring, on a cloud whose scan angle ramps linearly across a 75
+degree swath, sampling rendered pixels at mirrored columns:
+
+| Case | Result |
+| --- | --- |
+| Extent reported | 37.494 degrees, matching the file |
+| Gradient stops at a 30 degree limit | 0, 0.298, 0.300, 0.500, 0.700, 0.702, 1 |
+| Symmetry of those stops about 0.5 | exact |
+| Mirrored columns, inside the limit | 238,153,13 against 233,151,12 |
+| Mirrored columns, outside the limit | 184,14,14 against 183,14,14 |
+| Nadir | green, 27,172,39 |
+| Limit at or beyond the data extent | no step drawn, nothing painted red |
+| Restore | previous attribute, gradient and range all back |
+| Scan angle caption and readout | "Scan angle: -37.49 to 37.49 degrees" |
+| Slider travel for that attribute | -37.494 to 37.494, not -6249 to 6249 |
+| Dragging the handles to plus/minus 10 degrees | material range set to -1666.7 to 1666.7 raw |
+| Switching to a non-angle attribute | caption, readout and slider all back to Potree's own |
+| Switching back | degrees restored, handle positions kept |
+| After a panel rebuild | correct, and exactly one readout element |
+
+The two that mattered: the rendered `<ul>` is checked rather than the `<option>`
+markup, because `<option>` styling is invisible; and the group colours are read
+back with `getComputedStyle` rather than assumed from the class, which is what
+caught the selected row losing its tint to `.ui-state-active { !important }`.
 
 Interaction:
 
