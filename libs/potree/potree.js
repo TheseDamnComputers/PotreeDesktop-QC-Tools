@@ -63350,7 +63350,19 @@ void main() {
 						// expect bytes the file does not contain, and every node loaded
 						// afterwards fails to decode. [0, 1] means "the buffer already
 						// holds real values".
-						let initialRange = attExtra ? attExtra.initialRange : [0, 1];
+						//
+						// [QC Tools] The same is true of anything the decoder did not
+						// rescale. DecoderWorker.js only packs attributes *wider than
+						// 4 bytes* into 0..1; int8/16/32, uint8/16/32 and float32 are
+						// copied through raw. This code assumed every attribute was
+						// normalised, so getExtra() did clamp(rawValue, 0, 1) and every
+						// such attribute rendered as exactly two flat colours, with a
+						// range slider that appeared to do nothing. That covers scan
+						// angle, scan angle rank, user data, classification flags and
+						// every extra-bytes attribute of 4 bytes or fewer.
+						const rescaledByDecoder = attExtra && attExtra.type
+							&& attExtra.type.size > 4;
+						let initialRange = rescaledByDecoder ? attExtra.initialRange : [0, 1];
 						let initialRangeSize = initialRange[1] - initialRange[0];
 
 						let globalRange = range;
