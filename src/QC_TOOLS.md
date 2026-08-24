@@ -12,11 +12,14 @@ its own: it marks up Potree's Appearance dropdown in place.
 
 | File | What it is |
 | --- | --- |
-| `src/qc_tools.js` | The four viewer tools |
+| `src/qc_tools.js` | The density probe, box clip, polygon cut, density colouring and scan angle tools |
 | `src/qc_fileinfo.js` | The file info report |
 | `src/qc_attrlist.js` | Colour-coding for Potree's own attribute dropdown |
+| `src/qc_map.js` | Basemaps and overlays, the tile cache, and the CRS Potree never got |
+| `src/qc_map3d.js` | The basemap as ground in the 3D scene |
+| `src/qc_imagery.js` | Colouring the cloud from the imagery |
 | `src/qc_tools.css` | Panel styling |
-| `index.html` | Five lines: the stylesheet, the three scripts, and `QCTools.install(viewer)` inside `viewer.loadGUI()` |
+| `index.html` | Seven lines: the stylesheet, the five scripts, and `QCTools.install(viewer)` inside `viewer.loadGUI()` |
 | `src/desktop.js` | Two additions marked `[QC Tools]`, see [File info](#5-file-info) |
 | `main.js` | One addition marked `[QC Tools]`: strips the stock menu off the report window |
 | `libs/potree/potree.js` | Five small patches, each marked `[QC Tools]`, see [Potree patches](#potree-patches) |
@@ -595,6 +598,233 @@ the ancestor rather than inheriting: the child still computes to 1 while
 rendering at .35. The harness asserted on the child, passed, and the screenshot
 showed the fault. Assert on the `<li>`.
 
+## 8. Basemaps and overlays
+
+`PROVIDERS` in `qc_map.js` is a table of XYZ tile templates. Adding a basemap is
+one entry: an `{z}/{x}/{y}` template, a file extension for the cache, a maximum
+zoom, and `bulk` saying whether the provider tolerates a whole-area download.
+
+Fourteen entries now, in four groups, because a flat list that long is a wall
+rather than a menu. The groups answer the only question worth asking of the list
+at a glance: is there aerial for this area, or only a map.
+
+| Group | Entries |
+| --- | --- |
+| Aerial and satellite | Esri world imagery, USGS imagery (US), Sentinel-2 cloudless |
+| Maps | Esri topographic and street, USGS topo and imagery-with-topo, OpenStreetMap, OpenTopoMap, Carto Positron and Dark Matter |
+| Terrain and national | Esri world hillshade, Kartverket topo (Norway) |
+| Custom | your own template, with any key it needs |
+
+Every URL above was fetched before it was added, and every `maxZoom` was probed
+rather than guessed. Two things that look like they belong here and do not:
+
+- **Esri's tile order is `{z}/{y}/{x}`**, not `{z}/{x}/{y}`. The template
+  encodes the order, so an odd scheme costs nothing, but copying a URL from
+  another provider's row silently produces a map of the wrong place.
+- **An Esri service past its deepest zoom returns HTTP 200 with a 2,521 byte
+  "map data not yet available" tile**, not a 404. Probing for a maximum zoom by
+  status code alone reads every zoom as available. Compare the byte counts.
+
+`bulk` is a licensing question, not a technical one. OpenStreetMap, OpenTopoMap
+and Carto all ask that you not bulk download from their servers, so those are
+stream only and the Download button says so rather than doing it anyway.
+National imagery is usually the opposite: public domain, bulk-downloadable, and
+better resolution than the commercial tile APIs. Google and Mapbox tiles cannot
+be cached under their terms at all, so a keyed provider goes in the Custom slot
+and streams.
+
+### Overlays
+
+`OVERLAYS` is the same shape, for transparent tile sets drawn *over* the
+basemap: Esri boundaries and place names, Esri roads and transport, and
+OpenRailwayMap. Aerial imagery with place names on it reads far better than
+either alone, and a corridor delivery is much easier to place against the railway
+layer than against roads.
+
+An overlay is a provider, so it goes through the same template substitution,
+fetch, cache tree and sentinel loader. Three things are worth knowing:
+
+- **The layer goes in at index 1**, straight above the basemap and below
+  everything else. Potree's own layers, the extent outline and the camera
+  frustum, are all above it in that array, and an overlay that hid the outline it
+  is meant to give context to would be worse than none.
+- **The layer is made once and kept**, with only its source swapped. Creating one
+  per change stacks them up invisibly, and only the topmost is then ever seen.
+- **The overlay is downloaded alongside the basemap.** Without that, local mode
+  showed the cached basemap with the overlay missing, which reads as the overlay
+  being broken rather than as not downloaded. An overlay whose provider is
+  streaming-only is skipped, and the status line says so.
+
+The cache tree is keyed by provider id, so a basemap and its overlay cache side
+by side and neither has to know about the other:
+
+```
+<octree folder>/qc_tiles/<provider id>/<z>/<x>/<y>.<ext>
+```
+
+**An overlay drawing nothing is not the same as an overlay being broken.** A
+forestry block with no mapped roads renders an empty transport layer, correctly.
+Count tile loads to tell the two apart; the verification below does.
+
+## 9. Colour from imagery
+
+Samples the chosen basemap per point and paints it onto the cloud, with a slider
+that shades the result by LiDAR intensity.
+
+Wanted because these deliveries are intensity-only. Intensity is good at
+structure and useless at telling you what a thing *is*: a road, a field and a
+roof can all come back the same grey. Imagery is the opposite. It also sidesteps
+the point cloud opacity problem, since a cloud that already carries the ground
+imagery does not need to be seen through, and Potree's opacity does nothing while
+EDL is on.
+
+Press **Fetch imagery**. It fetches the tiles over the cloud's footprint at the
+chosen zoom, resamples them, and colours the cloud. **Restore colours** puts the
+previous attribute back; **Show colouring** returns, instantly, because the
+sampled colour is kept.
+
+**The honest limit: imagery is 2D.** Every point in a vertical column gets the
+colour of the ground under it, so canopy and the ground beneath it come out the
+same green. Excellent on ground, roads and roofs; unconvincing in vegetation.
+The intensity shading is what keeps structure visible where the colour cannot.
+
+### The raster is keyed by easting and northing
+
+The imagery is resampled into a CRS-aligned raster rather than left in Web
+Mercator. Point positions are already in the CRS, so the per-point lookup is two
+subtractions and a divide. Sampling in Mercator instead would mean a proj4
+transform per point, on every node that streams in.
+
+One raster cell per tile pixel, capped at eight million cells. A survey too wide
+to cover at that budget gets coarser cells and the panel reports the resolution
+actually used.
+
+### The reprojection is interpolated, and the error is measured
+
+Calling proj4 once per raster cell is the obvious way and far too slow: eight
+million cells is tens of seconds. Both systems are conformal and a survey is
+small, so over a few hundred metres the mapping between them is a similarity
+transform to well under a pixel, and bilinear interpolation between sampled
+corners reproduces it.
+
+That is an argument, not a measurement, so the grid is checked rather than
+trusted: the interpolated position is compared against real proj4 at 169 probe
+points, and the grid is refined from 8 divisions upwards until the worst error is
+under a quarter of a cell. Measured on a 500 m UTM delivery it settles at 8
+divisions with an error of **0.008% of a cell**, about 40 microns.
+
+The probes deliberately sit off the grid nodes. On a node the interpolation is
+exact by construction and would prove nothing.
+
+### The loop runs over raster cells, not tile pixels
+
+Going the other way leaves holes. The two grids are rotated relative to each
+other by the meridian convergence between the UTM zone and Web Mercator, so a
+one-to-one walk of source pixels misses scattered destination cells and the
+result is stippled.
+
+### Structure from intensity
+
+The slider multiplies the sampled colour by a brightness taken from intensity,
+so hue comes from the imagery and structure from the LiDAR.
+
+The curve is split at the **median** intensity rather than the midpoint of the
+range. A plain linear stretch darkens the whole cloud as the slider comes up,
+because most points sit below the midpoint; splitting at the median means turning
+the slider up adds contrast without changing the overall exposure, which is what
+makes it usable as a slider rather than as a one-off setting. Measured across the
+full slider travel: standard deviation of luminance 22.4 to 37.2, mean 58.1 to
+58.7.
+
+The stretch is the 2nd to 98th percentile, not the file's declared range: one
+specular return off water or a road sign sets the maximum and pushes everything
+else into the bottom of the scale.
+
+Those percentiles are read from **octree levels 0 to 3**, which are a subsample
+spread across the whole cloud. That is the same property the coverage mask
+relies on. Taking every Nth point of a full-resolution node instead would land on
+a structured spatial subset, because point order inside a node is the scan
+pattern, and the histogram would be of one corner of the delivery.
+
+### It rides on Potree's own `rgba` attribute
+
+No shader change and no sixth Potree patch. The renderer already maps the name
+`rgba` to the shader's colour input, and `activeAttributeName = "rgba"` already
+compiles the right branch.
+
+The buffer is `Uint8Array`, itemSize 4, normalised, exactly as Potree's own
+loader builds `rgba`. `geometry.attributes.position.constructor` is the plain
+`BufferAttribute`, which keeps the array it is handed; the typed subclasses
+(`Float32BufferAttribute` and friends) *convert* it, and the shader would then
+read 0..255 where it expects 0..1.
+
+**Nothing is added to `pcoGeometry.pointAttributes`**, for the reason in
+[Constraints worth keeping](#constraints-worth-keeping). `rgba` needs no entry
+there anyway.
+
+### Every buffer is stamped with an ever-increasing version
+
+The renderer re-uploads an attribute only when `attribute.version >
+vbo.version`. A freshly constructed `BufferAttribute` starts at version 0, and so
+does the vbo built from a loader's own `rgba` - so replacing an existing colour
+attribute compares 0 against 0, the test is false, and the GPU quietly keeps the
+old buffer.
+
+Every buffer this file hands the renderer therefore carries a stamp from a
+module-level counter, not a `version++`, because the vbo may already be at any
+version from an earlier pass and the comparison has to win every time.
+
+This is the whole difference between a cloud that has no `rgba` and one that
+does. Without a colour attribute there is no vbo, so the renderer creates one and
+everything works; that is the only case a 2.0 octree of an intensity-only
+delivery ever exercises. **Every PotreeConverter 1.7 octree has an `rgba`
+attribute**, all zeros when the source has no RGB, and it rendered the whole
+cloud black.
+
+Nothing in the numbers showed it. The geometry held the right colours, the
+attribute was bound, `activeAttributeName` was `rgba`, 111 of 111 visible nodes
+carried the buffer, and the status line reported 100% coverage. Only the picture
+was wrong. The verification below now asserts on **rendered pixels** for exactly
+this reason.
+
+Nodes are coloured as they stream in, on the viewer's update event, with a 6 ms
+per-frame budget. Same shape as the density colouring, and for the same reason: a
+node that arrives uncoloured renders with whatever was last bound to the colour
+input.
+
+### Cells with no imagery
+
+Painted a flat blue-grey, deliberately not black and not neutral grey, so a gap
+in the coverage reads as a gap rather than as dark ground. The status line
+reports the covered fraction of the footprint box as well.
+
+### Restore keeps the buffer
+
+Switching `activeAttributeName` back is the whole of a restore for a cloud that
+had no colour of its own: the shader compiles a different branch and never reads
+the attribute again. The sampled buffer is deliberately **not** deleted. Deleting
+it would leave the renderer holding a vbo for an attribute the geometry no longer
+lists, which `deleteBuffer` then never frees, and it would make Show colouring
+re-walk every point instead of being instant. The buffer is freed the ordinary
+way when the node leaves the LRU.
+
+A cloud that arrived with real colour is the one case undone properly, because
+there its own `rgba` is the thing being stood on. It is put aside on first use
+and handed back.
+
+### Scripting
+
+```js
+QCTools.imagery.setZoom(19);
+await QCTools.imagery.build();      // fetch, resample, colour
+QCTools.imagery.setStructure(1.0);  // full intensity shading
+QCTools.imagery.colourAt(x, y);     // [r, g, b] at an easting/northing, or null
+QCTools.imagery.restore();
+```
+
+`QCTools.imagery.raster` exposes the raster itself: `cell`, `nx`, `ny`, `minX`,
+`minY`, `covered`, `error` (in cells), `zoom` and `provider`.
+
 ## Defaults on startup
 
 | Setting | Potree default | Here |
@@ -655,7 +885,7 @@ colouring already relied on, which is the correct mapping for a raw buffer.
 
 ## Constraints worth keeping
 
-Six things that look like improvements and are not. Each caused a
+Nine things that look like improvements and are not. Each caused a
 hard-to-diagnose failure.
 
 **Never add anything to `pcoGeometry.pointAttributes`.** It is not a list of
@@ -707,6 +937,32 @@ down.
 which looks like a leak. It is not: `pointLoadLimit` is deliberately
 `pointBudget * 2`, so a full cache is the designed state. Forcing eviction below
 it throws away nodes the renderer needs and collapses detail.
+
+**Do not build an imagery colour buffer with a typed BufferAttribute
+subclass.** `new Float32BufferAttribute(uint8Array, 4, true)` looks like the
+same thing as the plain `BufferAttribute` the loader uses and is not: the typed
+subclasses *convert* the array they are given, so a `Uint8Array` of 0..255
+becomes a `Float32Array` of 0..255, the `normalized` flag no longer applies to
+the stored type, and every point renders clipped white. Use
+`geometry.attributes.position.constructor`, which is the plain class.
+
+**Do not hand the renderer a replacement attribute at version 0.** It re-uploads
+only when `attribute.version > vbo.version`, and a fresh `BufferAttribute` starts
+at 0, as does the vbo made from a loader's own `rgba`. Replacing an existing
+colour attribute therefore compares 0 against 0 and the GPU silently keeps the
+old data. Stamp every buffer from an ever-increasing counter. The failure is
+invisible in every number and obvious in the picture: an all-zero `rgba`, which
+is what a PotreeConverter 1.7 octree of an intensity-only delivery carries,
+renders the whole cloud black while the geometry holds perfect colour.
+
+**Do not leave a flex item in a sidebar row without `min-width: 0`.** A flex
+item defaults to `min-width: auto`, so a `<select>` refuses to shrink below its
+longest option name and pushes whatever follows it off the right edge of the
+300 px sidebar, where it cannot be clicked. The overlay opacity box was
+unreachable this way. Nothing in the panel's own numbers shows it: the harness
+compared the select's width against the container and passed, because the
+select was not the element being pushed out. Compare *right edges* of the later
+controls against the panel's, and look at the screenshot.
 
 Two shortcuts for computing density that also do not work:
 
@@ -932,3 +1188,69 @@ Interaction:
 | Camera position/yaw/pitch/radius on starting the polygon tool | unchanged |
 | Double-click to close a polygon | closes, camera unchanged |
 | Point under screen centre after drawing | survives the cut |
+
+Imagery colouring and the overlay layer, against a real 21M point delivery in
+UTM zone 16N with a compound (horizontal plus vertical) CRS, 500 x 500 m,
+intensity only and no colour of its own. Every reading from an identical camera
+position:
+
+| Case | Result |
+| --- | --- |
+| Raster cell at zoom 18 | 0.515 m, 971 x 971 cells |
+| Imagery over the footprint box | 100%, 0 tiles missing |
+| Reprojection error vs real proj4 | **0.008% of a cell**, at 8 grid divisions |
+| Sampled colour vs an independent tile lookup, 4 points | exact on all four channels |
+| Active attribute after colouring | `rgba` |
+| Visible nodes carrying the colour | 158 of 158 |
+| Visible node count, before and after | 158 and 158, 0 stuck loading |
+| Structure slider 50% to 100% | luminance sd 22.4 to 37.2, mean 58.1 to 58.7 |
+| Restore | previous attribute back, no nodes lost |
+| A second provider with a shallower ceiling (USGS, max 16) | zoom capped to 16, 2.06 m cells, 100% covered |
+| WebGL errors, console errors beyond baseline | 0, 0 |
+
+The independent lookup is the one that matters: it transforms the same point
+with proj4 directly, works out the tile and pixel it lands in, fetches that tile
+and reads it back. Two paths to the same answer, agreeing exactly, is what
+separates "the raster is plausible" from "the raster is registered".
+
+Basemaps and overlays:
+
+| Case | Result |
+| --- | --- |
+| Every candidate tile URL fetched before shipping | 19 tried, 2 dropped: one dead host, one not Web Mercator |
+| Maximum zoom per provider | probed, not guessed; Esri's blank tile is 200, not 404 |
+| Basemap entries, groups | 14, 4 |
+| Selecting an overlay | exactly one layer added, at index 1 |
+| Swapping overlay, then turning it off | still one layer, then back to the stock 9 |
+| Overlay tiles loaded, on a nudge of the map view | 9 loaded, 0 failed |
+| Download with an overlay selected | 16 basemap tiles and 16 overlay tiles, separate trees |
+| Local cache after that download | read back, deepest zoom reported |
+| Switching to a shallower provider | download zoom capped from 17 to 16 |
+| 3D ground drape, after the tile helpers were rewritten under it | 16 tiles placed |
+| Overlay opacity control, right edge vs the panel's | inside, after `min-width: 0` |
+
+Three of those came from looking at the picture rather than the numbers: the
+overlay opacity box was off the edge of the sidebar while the layout assertion
+passed, an empty transport overlay over a forestry block looked like a broken
+layer until tile loads were counted, and the colour registration was obvious on
+sight because the tree rows in the imagery line up with the tree rows in the
+intensity.
+
+The same colouring against a **PotreeConverter 1.7** octree of that delivery,
+whose loader always builds an `rgba` attribute and where this one is all zeros.
+Every reading here is the mean colour of the middle of the rendered frame, not
+of a buffer, because the buffers were correct throughout while the picture was
+black:
+
+| Case | Rendered centre, mean RGB |
+| --- | --- |
+| Source `rgba`, maximum channel value | 0, i.e. black |
+| After colouring from imagery | 48.6, 61.6, 43.0 (green leads, as vegetation should) |
+| After Restore, viewed through the same shader branch | 3.5, 5.2, 5.9, i.e. black again |
+| After Show colouring a second time | 48.6, 61.6, 43.0 |
+| The 2.0 octree, unchanged by the fix | 39.3, 52.5, 48.0 |
+
+Restore going black is the assertion, not a defect: the original buffer really is
+all zeros, so a restore that reaches the GPU must render black. A restore that
+did not reach the GPU would leave the imagery colours on screen and pass every
+buffer-level check.

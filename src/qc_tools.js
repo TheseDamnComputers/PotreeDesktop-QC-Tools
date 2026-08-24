@@ -69,6 +69,11 @@
 		window.QCTools.map = window.QCMap ? window.QCMap.install(ctx, panel) : null;
 		window.QCTools.map3d = window.QCMap3D
 			? window.QCMap3D.install(ctx, panel, window.QCTools.map) : null;
+		// Samples the same tiles the map fetches, per point. It shares the map's
+		// provider choice, cache and stream-or-local mode rather than keeping a
+		// second copy of any of them, which is why it installs after it.
+		window.QCTools.imagery = window.QCImagery
+			? window.QCImagery.install(ctx, panel, window.QCTools.map) : null;
 
 		window.QCTools.density = density;
 		window.QCTools.polygon = polygon;

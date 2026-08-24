@@ -23,6 +23,9 @@ Everything else is stock PotreeDesktop, the desktop build of
 | **Scan angle colouring** | Colour by how far off nadir each point was measured, symmetrically about the scan line, with a hard step at a chosen field of view. Set it to your scanner's real FOV and the red shows what a narrower acceptance would discard. |
 | **File info** | One click for everything the files record: LAS/COPC public header, every VLR decoded, coordinate system, compression, attribute ranges, classes present, average points/m², all as collapsible cards of selectable text, with a button to show the cloud's real coverage in Google Earth. |
 | **Attribute list colour-coding** | Potree's own Appearance dropdown, marked up by where each entry comes from: green for what is really in the cloud, purple for the viewer's own colouring modes, yellow for attributes it could colour by that this delivery does not have, orange for fields the source LAS records that the conversion did not carry over. |
+| **Basemaps and overlays** | Fourteen basemaps and three overlay layers under the cloud, streamed as you navigate or cached to disk first so they work offline. Potree ships a 2D map that never appears, because PotreeConverter drops the coordinate system; this hands it the one the source LAS declared. |
+| **Ground in 3D** | The basemap draped in the scene itself, at the cloud's own measured elevation, so the two are one picture rather than a locator widget in the corner. |
+| **Colour from imagery** | Sample the basemap per point and paint it onto the cloud, with a slider that shades the result by LiDAR intensity. Imagery gives hue, intensity gives structure, and they fail in opposite places. |
 
 The probe and the density colouring both count only points that are **currently
 visible**: GPS time, return, source id and classification filters and any active
@@ -74,7 +77,7 @@ The tools appear in a **QC Tools** section in the sidebar.
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Where the traps are, and how to verify a change without a test suite |
 
 Two sections of `QC_TOOLS.md` are worth reading before changing anything:
-[Constraints worth keeping](src/QC_TOOLS.md#constraints-worth-keeping), seven
+[Constraints worth keeping](src/QC_TOOLS.md#constraints-worth-keeping), eight
 changes that look like improvements and each break something subtly; and
 [Potree patches](src/QC_TOOLS.md#potree-patches), which must be re-applied after
 a Potree upgrade.
@@ -109,12 +112,15 @@ doing deliberately with the verification steps in
 
 | File | What it is |
 | --- | --- |
-| `src/qc_tools.js` | The four viewer tools |
+| `src/qc_tools.js` | The density probe, box clip, polygon cut, density colouring and scan angle tools |
 | `src/qc_fileinfo.js` | The file info report |
 | `src/qc_attrlist.js` | Colour-coding for Potree's own attribute dropdown |
+| `src/qc_map.js` | Basemaps and overlays, the tile cache, and the coordinate system Potree never got |
+| `src/qc_map3d.js` | The basemap as ground in the 3D scene |
+| `src/qc_imagery.js` | Colouring the cloud from the imagery |
 | `src/qc_tools.css` | Panel styling |
 | `src/QC_TOOLS.md` | Documentation, including the constraints and measurements behind the design |
-| `index.html` | Five added lines: the stylesheet, the three scripts, and `QCTools.install(viewer)` |
+| `index.html` | Seven added lines: the stylesheet, the five scripts, and `QCTools.install(viewer)` |
 | `src/desktop.js` | Two additions marked `[QC Tools]`, so a converted octree can still name the file it came from |
 | `main.js` | One addition marked `[QC Tools]`, so the report window does not get Electron's stock menu |
 | `libs/potree/potree.js` | Five small patches, each marked `[QC Tools]` |

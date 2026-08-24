@@ -35,6 +35,7 @@
 	const PROVIDERS = [
 		{
 			id: "esri-imagery",
+			group: "Aerial and satellite",
 			name: "Esri world imagery",
 			url: "https://server.arcgisonline.com/ArcGIS/rest/services/"
 				+ "World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -43,7 +44,75 @@
 			bulk: true,
 		},
 		{
+			id: "usgs-imagery",
+			group: "Aerial and satellite",
+			name: "USGS imagery, US only",
+			url: "https://basemap.nationalmap.gov/arcgis/rest/services/"
+				+ "USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
+			extension: "jpg",
+			maxZoom: 16,
+			bulk: true,
+			note: "public domain, but United States coverage only, and it stops "
+				+ "at zoom 16",
+		},
+		{
+			id: "s2cloudless",
+			group: "Aerial and satellite",
+			name: "Sentinel-2 cloudless, 10 m",
+			url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/"
+				+ "default/GoogleMapsCompatible/{z}/{y}/{x}.jpg",
+			extension: "jpg",
+			maxZoom: 15,
+			bulk: true,
+			note: "10 m pixels, so past zoom 14 it is upsampled rather than "
+				+ "sharper. EOX, CC BY-NC-SA: check the licence before "
+				+ "commercial use",
+		},
+		{
+			id: "esri-topo",
+			group: "Maps",
+			name: "Esri world topographic",
+			url: "https://server.arcgisonline.com/ArcGIS/rest/services/"
+				+ "World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+			extension: "jpg",
+			maxZoom: 19,
+			bulk: true,
+		},
+		{
+			id: "esri-street",
+			group: "Maps",
+			name: "Esri world street map",
+			url: "https://server.arcgisonline.com/ArcGIS/rest/services/"
+				+ "World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+			extension: "jpg",
+			maxZoom: 19,
+			bulk: true,
+		},
+		{
+			id: "usgs-topo",
+			group: "Maps",
+			name: "USGS topographic, US only",
+			url: "https://basemap.nationalmap.gov/arcgis/rest/services/"
+				+ "USGSTopo/MapServer/tile/{z}/{y}/{x}",
+			extension: "jpg",
+			maxZoom: 16,
+			bulk: true,
+			note: "public domain, United States coverage only",
+		},
+		{
+			id: "usgs-imagery-topo",
+			group: "Maps",
+			name: "USGS imagery with topo, US only",
+			url: "https://basemap.nationalmap.gov/arcgis/rest/services/"
+				+ "USGSImageryTopo/MapServer/tile/{z}/{y}/{x}",
+			extension: "jpg",
+			maxZoom: 16,
+			bulk: true,
+			note: "public domain, United States coverage only",
+		},
+		{
 			id: "osm",
+			group: "Maps",
 			name: "OpenStreetMap",
 			url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
 			extension: "png",
@@ -52,13 +121,112 @@
 			note: "streaming only: the OSM tile policy asks that you not bulk download",
 		},
 		{
+			id: "opentopomap",
+			group: "Maps",
+			name: "OpenTopoMap",
+			url: "https://tile.opentopomap.org/{z}/{x}/{y}.png",
+			extension: "png",
+			maxZoom: 17,
+			bulk: false,
+			note: "streaming only: its tile policy follows OSM's",
+		},
+		{
+			id: "carto-light",
+			group: "Maps",
+			name: "Carto Positron, pale",
+			url: "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+			extension: "png",
+			maxZoom: 20,
+			bulk: false,
+			note: "streaming only, and it needs Carto and OSM attribution. Pale "
+				+ "enough to read a cloud against",
+		},
+		{
+			id: "carto-dark",
+			group: "Maps",
+			name: "Carto Dark Matter",
+			url: "https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+			extension: "png",
+			maxZoom: 20,
+			bulk: false,
+			note: "streaming only, and it needs Carto and OSM attribution. Dark "
+				+ "enough to read a bright cloud against",
+		},
+		{
+			id: "esri-hillshade",
+			group: "Terrain and national",
+			name: "Esri world hillshade",
+			url: "https://server.arcgisonline.com/ArcGIS/rest/services/"
+				+ "Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
+			extension: "jpg",
+			maxZoom: 16,
+			bulk: true,
+			note: "shaded relief with no labels, which is the one that makes "
+				+ "landform legible under a cloud",
+		},
+		{
+			id: "kartverket-topo",
+			group: "Terrain and national",
+			name: "Kartverket topo, Norway",
+			url: "https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/"
+				+ "webmercator/{z}/{y}/{x}.png",
+			extension: "png",
+			maxZoom: 18,
+			bulk: true,
+			note: "Norway only. Kartverket open data, attribution required",
+		},
+		{
 			id: "custom",
+			group: "Custom",
 			name: "Custom XYZ template",
 			url: "",
 			extension: "png",
 			maxZoom: 22,
 			bulk: true,
 			note: "put your own {z}/{x}/{y} template in, with any key it needs",
+		},
+	];
+
+	/**
+	 * Layers drawn *over* the basemap rather than instead of it.
+	 *
+	 * These are transparent PNG tile sets, so they compose: aerial imagery with
+	 * place names on top reads far better than either alone, and a delivery along
+	 * a rail corridor is much easier to place against the railway layer than
+	 * against roads. They go through exactly the same fetch, cache and sentinel
+	 * machinery as a basemap, so an overlay is one more table entry too.
+	 */
+	const OVERLAYS = [
+		{
+			id: "none",
+			name: "none",
+		},
+		{
+			id: "esri-labels",
+			name: "Esri boundaries and place names",
+			url: "https://server.arcgisonline.com/ArcGIS/rest/services/"
+				+ "Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+			extension: "png",
+			maxZoom: 19,
+			bulk: true,
+		},
+		{
+			id: "esri-transport",
+			name: "Esri roads and transport",
+			url: "https://server.arcgisonline.com/ArcGIS/rest/services/"
+				+ "Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",
+			extension: "png",
+			maxZoom: 19,
+			bulk: true,
+		},
+		{
+			id: "openrailwaymap",
+			name: "OpenRailwayMap",
+			url: "https://a.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png",
+			extension: "png",
+			maxZoom: 19,
+			bulk: false,
+			note: "streaming only: its tile policy follows OSM's",
 		},
 	];
 
@@ -198,6 +366,9 @@
 		const viewer = ctx.viewer;
 		const state = {
 			provider: PROVIDERS[0],
+			overlay: OVERLAYS[0],
+			overlayLayer: null,
+			overlayOpacity: 1,
 			customUrl: "",
 			local: false,
 			padding: 500,
@@ -212,18 +383,25 @@
 
 		// ------------------------------------------------------------ tile maths
 
-		const tileUrl = (z, x, y) => {
-			const template = state.provider.id === "custom"
-				? state.customUrl : state.provider.url;
+		// The tile helpers are written against *a* provider rather than against
+		// the selected basemap, because an overlay is a provider too: same
+		// template substitution, same fetch, same cache tree keyed by id. The
+		// thin tileUrl/cachePath wrappers keep the basemap call sites, and the
+		// exported API that qc_map3d and qc_imagery use, unchanged.
+		const urlFor = (provider, z, x, y) => {
+			const template = provider.id === "custom" ? state.customUrl : provider.url;
 			return template
 				.replace("{z}", z).replace("{x}", x).replace("{y}", y);
 		};
 
-		const cachePath = (z, x, y) => {
+		const pathFor = (provider, z, x, y) => {
 			const npath = require("path");
-			return npath.join(state.cacheRoot, CACHE_DIR, state.provider.id,
-				String(z), String(x), `${y}.${state.provider.extension}`);
+			return npath.join(state.cacheRoot, CACHE_DIR, provider.id,
+				String(z), String(x), `${y}.${provider.extension}`);
 		};
+
+		const tileUrl = (z, x, y) => urlFor(state.provider, z, x, y);
+		const cachePath = (z, x, y) => pathFor(state.provider, z, x, y);
 
 		/**
 		 * The tile range covering the cloud, padded outwards. Potree gives us the
@@ -278,14 +456,15 @@
 		 * upsample the deepest level it has, so you get a coarse picture rather
 		 * than none.
 		 */
-		function deepestCachedZoom() {
+		function deepestCachedZoom(provider) {
 			if (!state.cacheRoot) {
 				return null;
 			}
 			try {
 				const fs = require("fs");
 				const npath = require("path");
-				const dir = npath.join(state.cacheRoot, CACHE_DIR, state.provider.id);
+				const dir = npath.join(state.cacheRoot, CACHE_DIR,
+					(provider || state.provider).id);
 				const levels = fs.readdirSync(dir)
 					.map(Number)
 					.filter((n) => Number.isFinite(n));
@@ -295,17 +474,19 @@
 			}
 		}
 
-		/** Swaps the base layer's source. Layer 0 is Potree's own OSM tile layer. */
-		function applySource() {
-			if (!viewer.mapView || !viewer.mapView.map) {
-				return;
-			}
+		/**
+		 * A tile source for one provider, streaming or off the cache.
+		 *
+		 * Both the basemap and the overlay use this, which is the whole reason it
+		 * takes a provider: two sources differ only in which table entry they
+		 * close over.
+		 */
+		function makeSource(provider) {
+			const cached = state.local ? deepestCachedZoom(provider) : null;
 
-			const cached = state.local ? deepestCachedZoom() : null;
-
-			const source = new ol.source.XYZ({
+			return new ol.source.XYZ({
 				url: SENTINEL,
-				maxZoom: cached !== null ? cached : state.provider.maxZoom,
+				maxZoom: cached !== null ? cached : provider.maxZoom,
 				crossOrigin: "anonymous",
 				tileLoadFunction: (tile, src) => {
 					const parsed = SENTINEL_RE.exec(src);
@@ -319,7 +500,7 @@
 					const y = Number(parsed[3]);
 
 					if (!state.local) {
-						image.src = tileUrl(z, x, y);
+						image.src = urlFor(provider, z, x, y);
 						return;
 					}
 
@@ -327,14 +508,59 @@
 					// blank rather than quietly fetched, so "local" means local and
 					// a gap in the cache is visible instead of silently filled over
 					// the network.
-					const file = cachePath(z, x, y);
-					if (state.cacheRoot && require("fs").existsSync(file)) {
+					if (!state.cacheRoot) {
+						return;
+					}
+					const file = pathFor(provider, z, x, y);
+					if (require("fs").existsSync(file)) {
 						image.src = "file:///" + file.replace(/\\/g, "/");
 					}
 				},
 			});
+		}
 
-			viewer.mapView.map.getLayers().item(0).setSource(source);
+		/** Swaps the base layer's source. Layer 0 is Potree's own OSM tile layer. */
+		function applySource() {
+			if (!viewer.mapView || !viewer.mapView.map) {
+				return;
+			}
+
+			viewer.mapView.map.getLayers().item(0).setSource(makeSource(state.provider));
+			applyOverlay();
+		}
+
+		/**
+		 * The overlay layer, drawn on top of the basemap.
+		 *
+		 * It goes in at index 1, straight above the basemap and below everything
+		 * else. Potree's own layers - the extent outline, the camera frustum, the
+		 * source tiles - are all above it in that array, and an overlay that hid
+		 * the outline it is meant to give context to would be worse than none.
+		 *
+		 * The layer is made once and kept, with only its source swapped, so
+		 * changing overlay repeatedly cannot stack layers up in the map.
+		 */
+		function applyOverlay() {
+			if (!viewer.mapView || !viewer.mapView.map) {
+				return;
+			}
+
+			const layers = viewer.mapView.map.getLayers();
+
+			if (!state.overlay || !state.overlay.url) {
+				if (state.overlayLayer) {
+					layers.remove(state.overlayLayer);
+					state.overlayLayer = null;
+				}
+				return;
+			}
+
+			if (!state.overlayLayer) {
+				state.overlayLayer = new ol.layer.Tile({ source: null });
+				layers.insertAt(1, state.overlayLayer);
+			}
+			state.overlayLayer.setSource(makeSource(state.overlay));
+			state.overlayLayer.setOpacity(state.overlayOpacity);
 		}
 
 		// ---------------------------------------------------------- the download
@@ -364,7 +590,6 @@
 
 			const fs = require("fs");
 			const npath = require("path");
-			const plan = countTiles(state.padding, state.maxZoom);
 
 			state.downloading = true;
 			state.abort = false;
@@ -374,24 +599,40 @@
 			let failed = 0;
 			let skipped = 0;
 
+			// A selected overlay is downloaded alongside the basemap. Without it,
+			// local mode showed the cached basemap with the overlay missing, which
+			// reads as the overlay being broken rather than as not downloaded. An
+			// overlay whose provider is streaming-only is skipped, and said so.
+			const toFetch = [state.provider];
+			if (state.overlay && state.overlay.url) {
+				if (state.overlay.bulk) {
+					toFetch.push(state.overlay);
+				} else {
+					ui.setStatus(`${state.overlay.name} is streaming only, so only the `
+						+ `basemap is being cached.`);
+				}
+			}
+
 			const jobs = [];
-			for (let z = 1; z <= state.maxZoom; z++) {
-				const r = tileRange(z, state.padding);
-				for (let x = r.minX; x <= r.maxX; x++) {
-					for (let y = r.minY; y <= r.maxY; y++) {
-						jobs.push([z, x, y]);
+			for (const layer of toFetch) {
+				for (let z = 1; z <= Math.min(state.maxZoom, layer.maxZoom); z++) {
+					const r = tileRange(z, state.padding);
+					for (let x = r.minX; x <= r.maxX; x++) {
+						for (let y = r.minY; y <= r.maxY; y++) {
+							jobs.push([layer, z, x, y]);
+						}
 					}
 				}
 			}
 
-			const fetchOne = async ([z, x, y]) => {
-				const file = cachePath(z, x, y);
+			const fetchOne = async ([layer, z, x, y]) => {
+				const file = pathFor(layer, z, x, y);
 				if (fs.existsSync(file)) {
 					skipped++;
 					return;
 				}
 				try {
-					const buffer = await fetchTile(tileUrl(z, x, y));
+					const buffer = await fetchTile(urlFor(layer, z, x, y));
 					if (!buffer) {
 						failed++;
 						return;
@@ -436,14 +677,50 @@
 
 		// ---------------------------------------------------------------- the UI
 
+		/**
+		 * The basemap list, grouped. Thirteen flat entries is a wall; the groups
+		 * are what make "is there aerial for this area" answerable at a glance.
+		 */
+		function providerOptions() {
+			const groups = [];
+			for (const provider of PROVIDERS) {
+				let group = groups.find((g) => g.name === provider.group);
+				if (!group) {
+					group = { name: provider.group, items: [] };
+					groups.push(group);
+				}
+				group.items.push(provider);
+			}
+			return groups.map((group) => `<optgroup label="${group.name}">`
+				+ group.items.map((p) => `<option value="${p.id}">${p.name}</option>`).join("")
+				+ `</optgroup>`).join("");
+		}
+
 		function buildPanel(panel) {
 			panel.append($(`
 				<div class="divider"><span>Map</span></div>
 				<li>
 					<label class="qc-axis" for="qc_map_provider">Basemap</label>
 					<select id="qc_map_provider" style="width: 100%">
-						${PROVIDERS.map((p) => `<option value="${p.id}">${p.name}</option>`).join("")}
+						${providerOptions()}
 					</select>
+				</li>
+				<li>
+					<!-- min-width: 0 on the select is load-bearing. A flex item
+					     defaults to min-width: auto, so a select refuses to shrink
+					     below its longest option name and pushes the opacity box
+					     off the right edge of the sidebar, where it cannot be
+					     clicked. Nothing in the panel's own numbers shows this. -->
+					<span class="qc-row">
+						<label for="qc_map_overlay">Overlay</label>
+						<select id="qc_map_overlay" style="flex: 1 1 0; min-width: 0">
+							${OVERLAYS.map((o) =>
+								`<option value="${o.id}">${o.name}</option>`).join("")}
+						</select>
+						<input id="qc_map_overlay_opacity" type="number" min="10" max="100"
+							step="10" value="100" class="qc-num" title="overlay opacity, percent"/>
+						<span>%</span>
+					</span>
 				</li>
 				<li id="qc_map_custom_row" style="display: none">
 					<input id="qc_map_custom" type="text" style="width: 100%"
@@ -475,6 +752,8 @@
 			return {
 				elDownload: panel.find("#qc_map_download"),
 				elProvider: panel.find("#qc_map_provider"),
+				elOverlay: panel.find("#qc_map_overlay"),
+				elOverlayOpacity: panel.find("#qc_map_overlay_opacity"),
 				elCustomRow: panel.find("#qc_map_custom_row"),
 				elCustom: panel.find("#qc_map_custom"),
 				elStream: panel.find("#qc_map_stream"),
@@ -495,9 +774,15 @@
 		 * it. The blank was correct and the message was about something else.
 		 */
 		const describeState = () => {
+			const overlay = state.overlay && state.overlay.url
+				? ` Overlay: ${state.overlay.name}`
+					+ (state.overlay.note ? ` (${state.overlay.note})` : "") + `.`
+				: "";
+
 			if (!state.local) {
 				return `Streaming ${state.provider.name} as you navigate.`
-					+ (state.provider.note ? ` Note: ${state.provider.note}.` : "");
+					+ (state.provider.note ? ` Note: ${state.provider.note}.` : "")
+					+ overlay;
 			}
 			if (!state.cacheRoot) {
 				return "Local cache: no cloud loaded from disk, so there is nothing to read.";
@@ -505,10 +790,10 @@
 			const cached = deepestCachedZoom();
 			if (cached === null) {
 				return `Local cache: nothing downloaded for ${state.provider.name}, so the `
-					+ `map is blank. Press Download tiles, or switch back to Stream.`;
+					+ `map is blank. Press Download tiles, or switch back to Stream.` + overlay;
 			}
 			return `Local cache: ${state.provider.name}, deepest zoom ${cached}. `
-				+ `Closer than that is upsampled, not fetched.`;
+				+ `Closer than that is upsampled, not fetched.` + overlay;
 		};
 
 		const markMode = () => {
@@ -520,8 +805,28 @@
 			state.provider = PROVIDERS.find((p) => p.id === $(this).val());
 			ui.elCustomRow.toggle(state.provider.id === "custom");
 			ui.elZoom.attr("max", state.provider.maxZoom);
+			// A provider with a shallower ceiling than the current setting would
+			// otherwise leave the box reading a zoom that can never be fetched, and
+			// the download silently stopping short of it.
+			if (state.maxZoom > state.provider.maxZoom) {
+				state.maxZoom = state.provider.maxZoom;
+				ui.elZoom.val(state.maxZoom);
+			}
 			applySource();
 			ui.setStatus(describeState());
+		});
+		ui.elOverlay.on("change", function () {
+			state.overlay = OVERLAYS.find((o) => o.id === $(this).val()) || OVERLAYS[0];
+			applyOverlay();
+			ui.setStatus(describeState());
+		});
+		ui.elOverlayOpacity.on("change", function () {
+			const percent = Math.min(100, Math.max(10, Number($(this).val()) || 100));
+			$(this).val(percent);
+			state.overlayOpacity = percent / 100;
+			if (state.overlayLayer) {
+				state.overlayLayer.setOpacity(state.overlayOpacity);
+			}
 		});
 		ui.elCustom.on("change", function () {
 			state.customUrl = $(this).val().trim();
@@ -543,7 +848,10 @@
 			$(this).val(state.maxZoom);
 			if (viewer.mapView && viewer.mapView.sceneProjection) {
 				const plan = countTiles(state.padding, state.maxZoom);
-				ui.setStatus(`A download would fetch about ${plan.total.toLocaleString()} tiles.`);
+				const both = state.overlay && state.overlay.url && state.overlay.bulk;
+				ui.setStatus(`A download would fetch about `
+					+ `${plan.total.toLocaleString()} tiles`
+					+ `${both ? ", plus the overlay's" : ""}.`);
 			}
 		});
 		ui.elDownload.click(download);
@@ -709,6 +1017,10 @@
 			// For the 3D overlay: it reuses the tile maths, the provider choice
 			// and the cache rather than keeping a second copy of any of them.
 			tileRange: (z) => tileRange(z, state.padding),
+			// Imagery colouring wants the footprint itself, with no padding: it is
+			// sampling the cloud, not drawing a map around it.
+			tileRangeAt: (z, padding) => tileRange(z, padding),
+			providerInfo: () => state.provider,
 			zoom: () => state.maxZoom,
 			isLocal: () => state.local,
 			tileUrl: (z, x, y) => tileUrl(z, x, y),

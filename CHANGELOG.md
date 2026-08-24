@@ -11,6 +11,44 @@ this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Colour the cloud from imagery**: a tenth tool. Samples the chosen basemap per
+  point at each point's easting and northing and paints it onto the cloud, with a
+  slider that shades the result by LiDAR intensity. These deliveries are
+  intensity-only, and intensity cannot tell a road from a field from a roof;
+  imagery cannot tell you anything about structure. Together they read as one
+  picture. It also sidesteps Potree's opacity doing nothing while EDL is on,
+  since a cloud carrying the ground imagery does not need to be seen through.
+  - The imagery is resampled into a raster keyed by easting and northing rather
+    than left in Web Mercator, so the per-point lookup is two subtractions and a
+    divide instead of a proj4 transform on every node that streams in.
+  - The reprojection between the two goes through a coarse interpolation grid,
+    refined until its worst error against real proj4 is under a quarter of a
+    cell. Measured on a 500 m UTM delivery: 0.008% of a cell.
+  - The intensity shading splits its curve at the median rather than the midpoint
+    of the range, so turning the slider up adds contrast without darkening the
+    whole cloud.
+  - No shader change and no sixth `potree.js` patch: it rides on Potree's own
+    `rgba` attribute, which the renderer already binds to the shader's colour
+    input. Every buffer handed to the renderer is stamped from an ever-increasing
+    counter, because it re-uploads only when `attribute.version > vbo.version`
+    and both sides start at zero when a cloud already has a colour attribute.
+    Works on PotreeConverter 1.7 and 2.0 octrees alike.
+  - Honest limit, stated in the panel and the docs: imagery is 2D, so canopy and
+    the ground under it get the same colour. Excellent on ground and roads,
+    unconvincing in vegetation.
+- **Eleven more basemaps**, in four groups: Esri world imagery, topographic,
+  street and hillshade; USGS imagery, topo and imagery-with-topo; Sentinel-2
+  cloudless; OpenStreetMap, OpenTopoMap, Carto Positron and Dark Matter;
+  Kartverket topo for Norway; and the existing custom XYZ slot. Every URL was
+  fetched and every maximum zoom probed before it was added, rather than
+  copied from documentation.
+- **Overlay layers**: transparent tile sets drawn over the basemap. Esri
+  boundaries and place names, Esri roads and transport, and OpenRailwayMap.
+  Aerial imagery with place names on it reads far better than either alone, and a
+  corridor delivery is easier to place against the railway layer than against
+  roads. An overlay is cached and downloaded alongside its basemap, in its own
+  tree, so local mode is not left showing a basemap with the overlay missing.
+
 - **Attribute list colour-coding**: Potree's own Appearance ▸ Attribute dropdown
   is now marked up by where each entry comes from. Green for attributes really
   recorded in the point cloud, purple for the viewer's own colouring modes
@@ -57,6 +95,11 @@ this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
     itself is built as a mirror about that midpoint, which needs no shader change.
 
 ### Fixed
+
+- **The overlay opacity control is no longer off the edge of the sidebar.** A
+  flex item defaults to `min-width: auto`, so the overlay `<select>` refused to
+  shrink below its longest option name and pushed the opacity box past the
+  300 px sidebar, where it could not be clicked.
 
 - **A compound coordinate system no longer stops a cloud rendering.** Real
   surveys declare horizontal plus vertical as `COMPD_CS[..., PROJCS[...],
