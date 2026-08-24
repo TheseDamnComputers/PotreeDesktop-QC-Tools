@@ -35,6 +35,14 @@ npm start
 Node.js and a Windows machine are the only requirements; PotreeConverter ships in
 `libs/`. Drag a LAS/LAZ file onto the window to convert and load it.
 
+If conversion fails with `spawn UNKNOWN`, Windows Smart App Control is blocking
+the unsigned converter. See
+[the note in the README](README.md#if-conversion-fails-with-spawn-unknown). It can
+also block `lazrs`, which takes **laspy** down with it, since `laspy/__init__.py`
+imports `copc` which imports `lazrs`. That matters here because the synthetic test
+clouds below are built with laspy, and writing uncompressed `.las` is no help: the
+failure is at package import, not at write time.
+
 ## Layout
 
 | File | What it is |
@@ -67,6 +75,15 @@ real viewer headlessly and asserts on numbers:
   level, visible node and point count, **from an identical camera position before
   and after**, or the comparison means nothing
 - delete the script when you are done; it is scaffolding, not a fixture
+
+**Assert on the rendered picture, not only on the buffers.** Anything that changes
+what the cloud looks like needs a check on pixels, because the numbers can all be
+right while the screen is wrong. Capture the frame with
+`win.webContents.capturePage()`, take `getBitmap()` (which is BGRA), and average a
+region. That is the only check that caught a colouring bug where the geometry held
+perfect colour, the attribute was bound, every visible node carried the buffer and
+the coverage read 100%, while the entire cloud rendered black because the renderer
+had never re-uploaded the buffer to the GPU.
 
 Four lessons from doing this, each paid for the hard way:
 

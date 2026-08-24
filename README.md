@@ -68,6 +68,37 @@ directly.
 
 The tools appear in a **QC Tools** section in the sidebar.
 
+### If conversion fails with "spawn UNKNOWN"
+
+Windows **Smart App Control** blocks the bundled PotreeConverter. The conversion
+panel reports `spawn UNKNOWN`, and Windows Security shows "Part of this app has
+been blocked ... we can't confirm who published PotreeConverter.exe".
+
+The converters in `libs/` come from upstream PotreeConverter and are **not code
+signed**. Smart App Control refuses unsigned binaries it has no reputation for,
+so this is a policy decision on your machine rather than a fault in the file.
+Nothing here is corrupt: check the state with
+
+```powershell
+(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy').VerifiedAndReputablePolicyState
+```
+
+`0` is off, `1` is on and enforcing, `2` is evaluation. Note that the error is
+`spawn UNKNOWN` and not `ENOENT`: the file is found and then refused. Mark of the
+Web is not involved, so `Unblock-File` has nothing to remove.
+
+Three ways round it, cheapest first:
+
+1. **Convert with PotreeConverter 1.7**, the other radio button in the conversion
+   panel. It is unsigned too but carries enough reputation to run. It writes
+   `cloud.js` rather than `metadata.json`, which costs you only the fine-grained
+   coverage mask in File info; that falls back to a coarser estimate that cannot
+   see a hole. Every other tool, imagery colouring included, works on its output.
+2. **Convert on a machine without Smart App Control** and copy the octree across.
+3. **Turn Smart App Control off**, in Settings, Privacy & security, Windows
+   Security, App & browser control. Understand before you do that **it cannot be
+   turned back on without reinstalling Windows.**
+
 ## Documentation
 
 | | |
