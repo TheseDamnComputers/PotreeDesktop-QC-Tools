@@ -9,6 +9,8 @@ this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-25
+
 ### Added
 
 - **The imagery colouring now defaults to the imagery's own resolution**, with a
@@ -226,5 +228,6 @@ First release, on top of upstream PotreeDesktop `5435c22`.
   `worker.onerror` one can freeze any Potree session. See
   [`src/QC_TOOLS.md`](src/QC_TOOLS.md#potree-patches).
 
+[1.2.0]: https://github.com/TheseDamnComputers/PotreeDesktop-QC-Tools/releases/tag/v1.2.0
 [1.1.0]: https://github.com/TheseDamnComputers/PotreeDesktop-QC-Tools/releases/tag/v1.1.0
 [1.0.0]: https://github.com/TheseDamnComputers/PotreeDesktop-QC-Tools/releases/tag/v1.0.0
