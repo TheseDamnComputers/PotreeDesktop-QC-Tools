@@ -60440,11 +60440,33 @@ void main() {
 
 			if(Potree.measureTimings) performance.mark("computeVisibilityTextureData-start");
 
+			// [QC Tools] Keep nodes that hold no points out of this texture.
+			//
+			// PotreeConverter can write hierarchy entries whose data is zero
+			// bytes; the loader warns "loaded node with 0 bytes" for each. They
+			// draw nothing, so they look harmless, and they are not: this texture
+			// is what the adaptive point size shader walks to decide how big to
+			// draw each point, and an empty node still gets a texel and still has
+			// its bit set in its parent's child mask.
+			//
+			// So getLOD() descends into it and stops there, and because the node
+			// has no points it has no density either, which sends the offset down
+			// the `else` branch below to a flat 0 where a populated sibling
+			// reports -1.5. Measured on one delivery, siblings at level 4: nodes
+			// with points resolve to LOD 2.5, the empty ones to LOD 4.0. Every
+			// point of the PARENT that falls inside an empty child's cube is
+			// therefore drawn 2^1.5, about 2.8x, too small, in a rectangle the
+			// exact shape of that cube. Raising min node size hides it only by
+			// pruning the empty nodes back out of the visible set, and raising the
+			// point budget can never help, because an empty node costs no budget.
+			//
+			// Dropping the texel makes the walk stop at the parent, which is the
+			// node those points actually came from.
+			const qcAllNodes = nodes;
+			nodes = nodes.filter(n => n.getNumPoints() > 0);
+
 			let data = new Uint8Array(nodes.length * 4);
 			let visibleNodeTextureOffsets = new Map();
-
-			// copy array
-			nodes = nodes.slice();
 
 			// sort by level and index, e.g. r, r0, r3, r4, r01, r07, r30, ...
 			let sort = function (a, b) {
@@ -60500,6 +60522,14 @@ void main() {
 			if(Potree.measureTimings){
 				performance.mark("computeVisibilityTextureData-end");
 				performance.measure("render.computeVisibilityTextureData", "computeVisibilityTextureData-start", "computeVisibilityTextureData-end");
+			}
+
+			// [QC Tools] An excluded node is still rendered, so it still needs a
+			// numeric offset or uVNStart becomes NaN. It has no points to draw.
+			for(const node of qcAllNodes){
+				if(!visibleNodeTextureOffsets.has(node)){
+					visibleNodeTextureOffsets.set(node, 0);
+				}
 			}
 
 			return {
@@ -61625,6 +61655,35 @@ void main() {
 			}
 
 			if (!visible) {
+				continue;
+			}
+
+			// [QC Tools] Never let a point cloud have more visible nodes than the
+			// visibility texture can describe.
+			//
+			// Adaptive point size sizes each point from the depth of the deepest
+			// visible node covering it, and the shader reads that tree out of
+			// `visibleNodesTexture`, which is 2048 x 1 RGBA: four bytes per node and
+			// room for exactly 2048 of them. `computeVisibilityTextureData` builds
+			// four bytes per visible node with no limit, and the renderer then does
+			// `data.set(...)` into that fixed 8192 byte image.
+			//
+			// Past 2048 nodes that copy throws `RangeError: offset is out of bounds`
+			// from inside the render loop, so the frame is abandoned and the canvas
+			// keeps whatever was last drawn. It reads as the cloud freezing
+			// half-refined, with regions stuck at a coarse level and points far too
+			// small for the zoom, which is exactly the shape of a node cube.
+			//
+			// Measured on an 84M point delivery, adaptive size, min node size 0:
+			// 1,735 nodes at a 10M budget renders fine; a 30M budget reaches 2,049
+			// and throws. Raising min node size "fixes" it only by pruning the node
+			// count back under the limit.
+			//
+			// Stopping here degrades the same way the point budget does, keeping the
+			// highest priority nodes, since the queue is best first by screen size.
+			// Levels 0 to 2 are exempt because they are force-visible above and the
+			// shader's walk needs the ancestors present.
+			if (node.getLevel() > 2 && pointcloud.visibleNodes.length >= 2048) {
 				continue;
 			}
 

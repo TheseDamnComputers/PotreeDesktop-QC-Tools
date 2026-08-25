@@ -11,6 +11,15 @@ this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The imagery colouring now defaults to the imagery's own resolution**, with a
+  **Memory** setting controlling the cell budget: native (64M cells), balanced
+  (16M) or light (4M). A raster cell is one imagery pixel, and cells are three
+  bytes rather than four, since a raster pre-filled with the no-imagery colour
+  needs no covered-or-not flag. Measured at zoom 19: a 500 m survey samples at
+  0.258 m for 11 MB, and a 1.1 km survey at 0.248 m for 61 MB where the old fixed
+  eight million cell cap would have given 0.57 m. When a survey is too wide to
+  cover at native resolution the panel now names the resolution it would have
+  used, rather than quietly returning something blurrier than the imagery.
 - **Colour the cloud from imagery**: a tenth tool. Samples the chosen basemap per
   point at each point's easting and northing and paints it onto the cloud, with a
   slider that shades the result by LiDAR intensity. These deliveries are
@@ -96,6 +105,31 @@ this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Rectangles of far-too-small points are gone.** A seventh `potree.js` patch,
+  and the fix for a long-standing "some squares look sparse, as if they never
+  loaded" complaint. PotreeConverter can write hierarchy entries whose data is
+  zero bytes. They draw nothing, but they still occupy a texel in the visibility
+  texture the adaptive point size shader walks, and they still set their bit in
+  their parent's child mask, so `getLOD()` descends into them and stops. Having
+  no points they have no density, so their LOD offset falls to a flat 0 where a
+  populated sibling reports -1.5: measured on one delivery, siblings at level 4
+  resolve to LOD 2.5 with points and 4.0 without, which draws every point of the
+  parent inside that cube about 2.8x too small. Raising min node size only hid it
+  by pruning the empty nodes out of the visible set, and raising the point budget
+  could never help, because an empty node costs no budget. Empty nodes are now
+  left out of the texture, so the walk stops at the parent the points came from.
+- **The viewer no longer dies with "Potree Encountered An Error" at a large point
+  budget.** A sixth `potree.js` patch. Adaptive point size takes each point's size
+  from the depth of the deepest visible node covering it, and the shader reads
+  that tree out of a 2048 x 1 texture holding exactly 2048 nodes.
+  `computeVisibilityTextureData` built four bytes per visible node with no limit,
+  so past 2048 nodes the copy into that fixed image threw `RangeError: offset is
+  out of bounds` from inside the render loop and Potree replaced the viewer with
+  its error page. Measured on an 84M point delivery at min node size 0: 1,735
+  visible nodes at a 10M budget renders, 2,049 at a 30M budget dies. Visible
+  nodes are now capped, degrading the way the point budget already does. Both
+  defaults here push towards the limit, since `index.html` sets
+  `setMinNodeSize(0)` and `desktop.js` sets the material to `ADAPTIVE`.
 - **The overlay opacity control is no longer off the edge of the sidebar.** A
   flex item defaults to `min-width: auto`, so the overlay `<select>` refused to
   shrink below its longest option name and pushed the opacity box past the

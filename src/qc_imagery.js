@@ -41,11 +41,28 @@
 
 	const MERCATOR_EDGE = 20037508.342789244;
 
-	// A raster cell is one byte of red, green, blue and covered-or-not. Eight
-	// million of them is 32 MB, which is the most worth spending beside a point
-	// cloud that already wants the memory. A survey wider than the chosen zoom
-	// can cover at that budget gets coarser cells, and the panel says so.
-	const MAX_CELLS = 8e6;
+	// A raster cell is three bytes: red, green and blue.
+	//
+	// There is deliberately no fourth covered-or-not byte. Dropping it is a
+	// quarter of the memory, and the raster is pre-filled with NO_IMAGERY, so a
+	// cell that was never painted still reads as "no imagery" without a flag. The
+	// only thing that costs is the covered count, which treats a cell that still
+	// holds exactly NO_IMAGERY as unpainted; imagery that happens to be that
+	// exact colour is miscounted, which is worth a statistic being a hair off.
+	const BYTES_PER_CELL = 3;
+
+	// How many cells the raster may use, and so how fine it can be. A cell is
+	// one imagery pixel, so the cap is what decides whether a survey gets the
+	// zoom's native resolution or a coarsened version of it.
+	//
+	// Native at zoom 19 is about 0.22 m at mid latitude, so 64M cells covers a
+	// survey roughly 1.8 km square before anything has to be given up. Beyond
+	// that the cell grows and the panel says so rather than pretending.
+	const CELL_BUDGETS = [
+		{ id: "native", name: "native, up to 190 MB", cells: 64e6 },
+		{ id: "balanced", name: "balanced, up to 48 MB", cells: 16e6 },
+		{ id: "light", name: "light, up to 12 MB", cells: 4e6 },
+	];
 
 	// Tiles are fetched one at a time so the progress line can move and the
 	// window stays responsive. Past this it is a long wait with no warning, so
@@ -87,6 +104,7 @@
 		const viewer = ctx.viewer;
 		const state = {
 			zoom: 18,
+			budget: CELL_BUDGETS[0],
 			structure: 0.5,
 			raster: null,
 			colouring: false,
@@ -301,14 +319,18 @@
 
 			const centre = toMercator.forward([
 				(extent.minX + extent.maxX) / 2, (extent.minY + extent.maxY) / 2]);
-			let cell = groundResolution(zoom, centre[1]);
 
-			// One raster cell per tile pixel is the natural choice, but a wide
-			// survey at a deep zoom would want hundreds of millions of them. Coarsen
-			// rather than refuse, and report the resolution actually used.
+			// One raster cell per imagery pixel is the whole point: any coarser and
+			// the colouring throws away detail the tiles actually carry.
+			const nativeCell = groundResolution(zoom, centre[1]);
+			let cell = nativeCell;
+
+			// A wide survey at a deep zoom would want hundreds of millions of
+			// cells. Coarsen rather than refuse, and report it rather than let it
+			// look like the imagery was this blurry.
 			const wanted = Math.ceil(width / cell) * Math.ceil(height / cell);
-			if (wanted > MAX_CELLS) {
-				cell *= Math.sqrt(wanted / MAX_CELLS);
+			if (wanted > state.budget.cells) {
+				cell *= Math.sqrt(wanted / state.budget.cells);
 			}
 
 			const nx = Math.max(1, Math.ceil(width / cell));
@@ -320,13 +342,22 @@
 				return null;
 			}
 
+			const rgb = new Uint8Array(nx * ny * BYTES_PER_CELL);
+			for (let i = 0; i < rgb.length; i += BYTES_PER_CELL) {
+				rgb[i] = NO_IMAGERY[0];
+				rgb[i + 1] = NO_IMAGERY[1];
+				rgb[i + 2] = NO_IMAGERY[2];
+			}
+
 			const raster = {
 				minX: extent.minX,
 				minY: extent.minY,
 				cell: cell,
+				nativeCell: nativeCell,
 				nx: nx,
 				ny: ny,
-				rgba: new Uint8Array(nx * ny * 4),
+				rgb: rgb,
+				bytes: rgb.length,
 				zoom: zoom,
 				provider: mapTools.providerInfo().name,
 				error: interpolator.error,
@@ -438,14 +469,15 @@
 					}
 
 					const at = ((Math.floor(v * height) * width) + Math.floor(u * width)) * 4;
-					const out = (j * raster.nx + i) * 4;
-					if (raster.rgba[out + 3] === 0) {
+					const out = (j * raster.nx + i) * BYTES_PER_CELL;
+					if (raster.rgb[out + 0] === NO_IMAGERY[0]
+							&& raster.rgb[out + 1] === NO_IMAGERY[1]
+							&& raster.rgb[out + 2] === NO_IMAGERY[2]) {
 						filled++;
 					}
-					raster.rgba[out + 0] = pixels[at + 0];
-					raster.rgba[out + 1] = pixels[at + 1];
-					raster.rgba[out + 2] = pixels[at + 2];
-					raster.rgba[out + 3] = 255;
+					raster.rgb[out + 0] = pixels[at + 0];
+					raster.rgb[out + 1] = pixels[at + 1];
+					raster.rgb[out + 2] = pixels[at + 2];
 				}
 			}
 
@@ -615,16 +647,12 @@
 					}
 					const ix = Math.floor((x - raster.minX) / raster.cell);
 					const iy = Math.floor((y - raster.minY) / raster.cell);
-					const at = (iy * raster.nx + ix) * 4;
-					if (raster.rgba[at + 3] === 0) {
-						sample[out + 0] = NO_IMAGERY[0];
-						sample[out + 1] = NO_IMAGERY[1];
-						sample[out + 2] = NO_IMAGERY[2];
-						return;
-					}
-					sample[out + 0] = raster.rgba[at + 0];
-					sample[out + 1] = raster.rgba[at + 1];
-					sample[out + 2] = raster.rgba[at + 2];
+					// An unpainted cell already holds NO_IMAGERY, so there is
+					// nothing to test for: read it either way.
+					const at = (iy * raster.nx + ix) * BYTES_PER_CELL;
+					sample[out + 0] = raster.rgb[at + 0];
+					sample[out + 1] = raster.rgb[at + 1];
+					sample[out + 2] = raster.rgb[at + 2];
 				});
 
 				geometry.qcImagerySample = sample;
@@ -801,8 +829,14 @@
 			const covered = raster.covered / (raster.nx * raster.ny) * 100;
 			const structure = Math.round(state.structure * 100);
 
+			const coarsened = raster.cell > raster.nativeCell * 1.02;
 			ui.setStatus(`${raster.provider} at zoom ${raster.zoom}: `
-				+ `${raster.cell.toFixed(2)} m cells, imagery over `
+				+ `${raster.cell.toFixed(2)} m cells`
+				+ (coarsened
+					? ` (coarsened from ${raster.nativeCell.toFixed(2)} m to fit the `
+						+ `resolution budget, raise it for full detail)`
+					: `, the full detail this imagery carries`)
+				+ `, ${(raster.bytes / 1048576).toFixed(0)} MB. Imagery over `
 				+ `${covered.toFixed(0)}% of the footprint box`
 				+ `${raster.missing ? `, ${raster.missing} tiles missing` : ""}. `
 				+ `Reprojection error ${(raster.error * 100).toFixed(0)}% of a cell. `
@@ -856,6 +890,15 @@
 						</select>
 					</span>
 				</li>
+				<li>
+					<span class="qc-row">
+						<span>Memory</span>
+						<select id="qc_img_budget" style="flex: 1 1 0; min-width: 0">
+							${CELL_BUDGETS.map((b) =>
+								`<option value="${b.id}">${b.name}</option>`).join("")}
+						</select>
+					</span>
+				</li>
 				<li><input id="qc_img_build" type="button" value="Fetch imagery" style="width: 100%"/></li>
 				<li>
 					<span class="qc-axis">Structure from intensity
@@ -877,6 +920,10 @@
 
 			panel.find("#qc_img_zoom").on("change", function () {
 				state.zoom = Number($(this).val()) || 18;
+			});
+			panel.find("#qc_img_budget").on("change", function () {
+				state.budget = CELL_BUDGETS.find((b) => b.id === $(this).val())
+					|| CELL_BUDGETS[0];
 			});
 
 			panel.find("#qc_img_structure").slider({
@@ -918,6 +965,10 @@
 				state.zoom = zoom;
 				$("#qc_img_zoom").val(String(zoom));
 			},
+			setBudget: (id) => {
+				state.budget = CELL_BUDGETS.find((b) => b.id === id) || CELL_BUDGETS[0];
+				$("#qc_img_budget").val(state.budget.id);
+			},
 			setStructure: (amount) => {
 				state.structure = amount;
 				$("#qc_img_structure").slider("value", Math.round(amount * 100));
@@ -932,9 +983,11 @@
 				if (ix < 0 || iy < 0 || ix >= raster.nx || iy >= raster.ny) {
 					return null;
 				}
-				const at = (iy * raster.nx + ix) * 4;
-				return raster.rgba[at + 3] === 0 ? null
-					: [raster.rgba[at], raster.rgba[at + 1], raster.rgba[at + 2]];
+				const at = (iy * raster.nx + ix) * BYTES_PER_CELL;
+				const rgb = [raster.rgb[at], raster.rgb[at + 1], raster.rgb[at + 2]];
+				const unpainted = rgb[0] === NO_IMAGERY[0] && rgb[1] === NO_IMAGERY[1]
+					&& rgb[2] === NO_IMAGERY[2];
+				return unpainted ? null : rgb;
 			},
 			get raster() { return state.raster; },
 			get intensity() { return state.intensity; },

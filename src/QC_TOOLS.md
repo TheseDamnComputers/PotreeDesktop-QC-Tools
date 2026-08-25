@@ -22,7 +22,7 @@ its own: it marks up Potree's Appearance dropdown in place.
 | `index.html` | Seven lines: the stylesheet, the five scripts, and `QCTools.install(viewer)` inside `viewer.loadGUI()` |
 | `src/desktop.js` | Two additions marked `[QC Tools]`, see [File info](#5-file-info) |
 | `main.js` | One addition marked `[QC Tools]`: strips the stock menu off the report window |
-| `libs/potree/potree.js` | Five small patches, each marked `[QC Tools]`, see [Potree patches](#potree-patches) |
+| `libs/potree/potree.js` | Seven small patches, each marked `[QC Tools]`, see [Potree patches](#potree-patches) |
 
 Launch with the `Potree QC Viewer` shortcut in the project folder, or:
 
@@ -695,9 +695,46 @@ Mercator. Point positions are already in the CRS, so the per-point lookup is two
 subtractions and a divide. Sampling in Mercator instead would mean a proj4
 transform per point, on every node that streams in.
 
-One raster cell per tile pixel, capped at eight million cells. A survey too wide
-to cover at that budget gets coarser cells and the panel reports the resolution
-actually used.
+### Resolution, and the Memory setting
+
+**One raster cell is one imagery pixel.** Anything coarser throws away detail the
+tiles actually carry, so the default is the zoom's native ground resolution:
+about 0.25 m at zoom 19 at mid latitude.
+
+A cell is **three bytes**, red, green and blue. There is deliberately no fourth
+covered-or-not byte: the raster is pre-filled with the no-imagery colour, so a
+cell that was never painted already reads as unpainted without a flag. That is a
+quarter of the memory for the cost of one statistic, the covered percentage,
+treating imagery that happens to be exactly that colour as unpainted.
+
+The **Memory** setting is the cell budget, and it is what decides whether a survey
+gets native resolution or a coarsened version of it:
+
+| Setting | Cells | Native at zoom 19 covers about |
+| --- | --- | --- |
+| native | 64M | 1.8 km square |
+| balanced | 16M | 900 m square |
+| light | 4M | 450 m square |
+
+Past that the cell grows and **the panel says so**, naming the resolution it
+would have used. Silently returning a blurrier answer than the imagery contains
+is the failure worth avoiding here: it looks like the imagery is poor when it is
+not.
+
+Measured, at zoom 19:
+
+| Survey | Setting | Cell | Memory |
+| --- | --- | --- | --- |
+| 500 m | native | 0.258 m, native | 11 MB |
+| 1.1 km | light | 0.570 m, coarsened from 0.248 | 11 MB |
+| 1.1 km | native | 0.248 m, native | 61 MB |
+
+**Zoom is usually the real ceiling, not this.** Esri's imagery stops at zoom 19
+over most ground, and past its deepest zoom it returns HTTP 200 with a 2,521 byte
+"map data not yet available" tile rather than a 404, so probing by status code
+alone reads every zoom as available. At that point the LiDAR is already finer
+than the imagery: a delivery with 0.06 m point spacing has roughly 14 points per
+imagery pixel, so neighbouring points share a colour no matter what.
 
 ### The reprojection is interpolated, and the error is measured
 
@@ -850,7 +887,7 @@ second line.
 
 ## Potree patches
 
-Five changes to `libs/potree/potree.js`, all marked `[QC Tools]`. Re-apply
+Seven changes to `libs/potree/potree.js`, all marked `[QC Tools]`. Re-apply
 them after a Potree upgrade.
 
 **1. `Renderer`: tolerate attributes added after a buffer is built.** Three
@@ -882,6 +919,64 @@ nothing. It affected scan angle, scan angle rank, user data, classification flag
 and every extra-bytes attribute of 4 bytes or fewer; `gps-time` was unaffected
 because a double is 8 bytes. The fix picks the `[0, 1]` branch that the density
 colouring already relied on, which is the correct mapping for a raw buffer.
+
+**6. `updateVisibility`: cap a cloud's visible nodes at 2048.** Adaptive point
+size takes each point's size from the depth of the deepest visible node covering
+it, and the shader reads that tree out of `visibleNodesTexture`. That texture is
+**2048 x 1 RGBA**: four bytes per node, room for exactly 2048 of them, and the
+shader's own lookup divides by a hard-coded `2048.0`.
+`computeVisibilityTextureData` builds four bytes per visible node with no limit,
+and the renderer then does `data.set(...)` into that fixed 8,192 byte image.
+
+Past 2048 nodes that copy throws `RangeError: offset is out of bounds` from
+inside the render loop, and Potree replaces the whole viewer with its "Potree
+Encountered An Error" page. Measured on an 84M point delivery with adaptive point
+size and min node size 0: a 10M budget reaches 1,735 nodes and renders; a 30M
+budget reaches 2,049 and dies. Both of this project's defaults push towards it,
+since `index.html` sets `setMinNodeSize(0)` and `desktop.js` sets the material to
+`ADAPTIVE`.
+
+The patch stops adding visible nodes at 2048, which degrades the same way the
+point budget already does: the priority queue is best-first by screen size, so
+what survives is what matters most. Levels 0 to 2 are exempt, because they are
+force-visible above and the shader's walk needs the ancestors present. After it,
+the same cloud renders at 30M, 60M and 90M budgets with no error.
+
+**7. `computeVisibilityTextureData`: keep empty nodes out of the visibility
+texture.** This is the fix for **rectangles of far-too-small points**, the ones
+that look like a patch of the cloud failed to load.
+
+PotreeConverter can write hierarchy entries whose data is zero bytes; the loader
+warns `loaded node with 0 bytes` once per node. They draw nothing, so they look
+harmless. They are not. The visibility texture is what the adaptive point size
+shader walks to decide how big to draw each point, and an empty node still gets a
+texel and still has its bit set in its parent's child mask. `getLOD()` therefore
+descends into it and stops there, and since the node has no points it has no
+density either, so its LOD offset falls to a flat `0` where a populated sibling
+reports `-1.5`.
+
+Measured on one delivery, four siblings at level 4:
+
+| Node | Points | Density | LOD the shader computes |
+| --- | --- | --- | --- |
+| `r2470` | 2,475 | 1 | 2.5 |
+| `r2471` | **0** | none | **4.0** |
+| `r2472` | 2,710 | 1 | 2.5 |
+| `r2473` | **0** | none | **4.0** |
+
+Every point of the *parent* that falls inside an empty child's cube is drawn
+`2^1.5`, about **2.8x too small**, in a rectangle the exact shape of that cube.
+
+Two things follow, and both match how the fault behaves in practice. Raising
+**min node size** appears to fix it, but only because it prunes the empty nodes
+back out of the visible set. Raising the **point budget** can never fix it,
+because an empty node costs no budget and so is never the thing that gets cut.
+
+The patch drops those texels, which makes the walk stop at the parent, the node
+whose points these actually are. On the reported frame it takes surface fill from
+74.5% to 75.9% and the rectangle disappears completely. Nodes left out are still
+rendered, so they are given a numeric offset rather than `undefined`, or
+`uVNStart` becomes `NaN`; they have no points to draw either way.
 
 ## Constraints worth keeping
 

@@ -154,11 +154,11 @@ doing deliberately with the verification steps in
 | `index.html` | Seven added lines: the stylesheet, the five scripts, and `QCTools.install(viewer)` |
 | `src/desktop.js` | Two additions marked `[QC Tools]`, so a converted octree can still name the file it came from |
 | `main.js` | One addition marked `[QC Tools]`, so the report window does not get Electron's stock menu |
-| `libs/potree/potree.js` | Five small patches, each marked `[QC Tools]` |
+| `libs/potree/potree.js` | Seven small patches, each marked `[QC Tools]` |
 
 ### Changes to Potree itself
 
-Five defects in the bundled `libs/potree/potree.js` had to be fixed for this to
+Seven defects in the bundled `libs/potree/potree.js` had to be fixed for this to
 work. Each is marked with a `[QC Tools]` comment explaining what it fixes.
 Re-apply them after updating Potree.
 
